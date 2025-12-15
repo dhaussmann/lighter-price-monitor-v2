@@ -147,8 +147,9 @@ export class PriceMonitor {
     if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
       const subscribeMsg = {
         type: 'subscribe',
-        channel: `market_stats/${tokenId}`
+        channel: `market_stats/${tokenId}`  // Request mit Slash
       };
+      console.log(`📡 Subscribing to market_stats/${tokenId}`);
       this.lighterWs.send(JSON.stringify(subscribeMsg));
     }
   }
@@ -157,8 +158,9 @@ export class PriceMonitor {
     if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
       const unsubscribeMsg = {
         type: 'unsubscribe',
-        channel: `market_stats/${tokenId}`
+        channel: `market_stats/${tokenId}`  // Request mit Slash
       };
+      console.log(`📡 Unsubscribing from market_stats/${tokenId}`);
       this.lighterWs.send(JSON.stringify(unsubscribeMsg));
     }
   }
@@ -167,14 +169,19 @@ export class PriceMonitor {
     try {
       const message = JSON.parse(data);
 
-      // Lighter verwendet market_stats Channel
-      if (message.channel && message.channel.startsWith('market_stats/')) {
-        const tokenId = message.channel.replace('market_stats/', '');
-        // Verwende mark_price oder index_price
-        const price = parseFloat(message.data?.mark_price || message.data?.index_price);
+      // DEBUG: Logge alle Nachrichten von Lighter
+      console.log('📩 Lighter message:', JSON.stringify(message));
 
-        if (price && this.monitoredTokens.has(tokenId)) {
-          this.checkPriceThreshold(tokenId, price);
+      // Lighter verwendet market_stats:X Format (Doppelpunkt!)
+      if (message.channel && message.channel.startsWith('market_stats:')) {
+        const marketId = message.channel.replace('market_stats:', '');
+        // Preis aus market_stats Objekt
+        const price = parseFloat(message.market_stats?.mark_price || message.market_stats?.index_price);
+
+        console.log(`💰 Price update for market ${marketId} (${message.market_stats?.symbol}):`, price);
+
+        if (price && this.monitoredTokens.has(marketId)) {
+          this.checkPriceThreshold(marketId, price);
         }
       }
     } catch (error) {

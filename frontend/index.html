@@ -546,30 +546,16 @@
         </h2>
         <form id="monitorForm">
           <div class="form-group">
-            <label>Token Pair</label>
+            <label>Market (Symbol oder ID)</label>
             <input
               type="text"
               id="tokenId"
               list="tokenList"
-              placeholder="Wähle ein Token-Pair oder gib es manuell ein"
+              placeholder="Wähle einen Market oder gib Market ID ein (z.B. 0 für ETH)"
               required
             />
             <datalist id="tokenList">
-              <option value="WETH_USDC">WETH/USDC - Ethereum</option>
-              <option value="WBTC_USDC">WBTC/USDC - Bitcoin</option>
-              <option value="SOL_USDC">SOL/USDC - Solana</option>
-              <option value="DOGE_USDC">DOGE/USDC - Dogecoin</option>
-              <option value="PEPE_USDC">PEPE/USDC - Pepe</option>
-              <option value="WLD_USDC">WLD/USDC - Worldcoin</option>
-              <option value="LINK_USDC">LINK/USDC - Chainlink</option>
-              <option value="AVAX_USDC">AVAX/USDC - Avalanche</option>
-              <option value="NEAR_USDC">NEAR/USDC - Near Protocol</option>
-              <option value="DOT_USDC">DOT/USDC - Polkadot</option>
-              <option value="TON_USDC">TON/USDC - Toncoin</option>
-              <option value="TAO_USDC">TAO/USDC - Bittensor</option>
-              <option value="POL_USDC">POL/USDC - Polygon</option>
-              <option value="ARB_USDC">ARB/USDC - Arbitrum</option>
-              <option value="OP_USDC">OP/USDC - Optimism</option>
+              <!-- Wird dynamisch geladen von Lighter API -->
             </datalist>
           </div>
 
@@ -653,21 +639,49 @@
     // WebSocket-URL (nach Deployment anpassen!)
     const WS_URL = 'wss://lighter-price-monitor-v2.cloudflareone-demo-account.workers.dev/ws';
     // Für lokale Entwicklung: 'ws://localhost:8787/ws'
-    
+
+    const LIGHTER_API = 'https://mainnet.zklighter.elliot.ai/api/v1';
+
     let ws = null;
     let monitors = [];
     let alerts = [];
     let reconnectTimer = null;
+    let markets = [];  // Lighter markets
 
     // Initialisierung
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       connectWebSocket();
-      
+      await loadMarkets();  // Lade Symbole von Lighter
+
       document.getElementById('monitorForm').addEventListener('submit', (e) => {
         e.preventDefault();
         addMonitor();
       });
     });
+
+    // Lade verfügbare Markets von Lighter API
+    async function loadMarkets() {
+      try {
+        const response = await fetch(`${LIGHTER_API}/orderBooks`);
+        const data = await response.json();
+
+        if (data.code === 200 && data.order_books) {
+          markets = data.order_books
+            .filter(m => m.status === 'active')
+            .sort((a, b) => a.market_id - b.market_id);
+
+          // Update Token-Dropdown
+          const datalist = document.getElementById('tokenList');
+          datalist.innerHTML = markets.map(m =>
+            `<option value="${m.market_id}">${m.symbol} (ID: ${m.market_id})</option>`
+          ).join('');
+
+          console.log(`Loaded ${markets.length} markets from Lighter`);
+        }
+      } catch (error) {
+        console.error('Failed to load markets:', error);
+      }
+    }
 
     function connectWebSocket() {
       try {
