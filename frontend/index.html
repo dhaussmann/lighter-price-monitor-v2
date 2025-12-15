@@ -599,6 +599,20 @@
             </div>
           </div>
 
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input
+                type="checkbox"
+                id="trackOrderbook"
+                style="width: auto; cursor: pointer;"
+              />
+              <span>📚 Orderbook speichern (Asks & Bids)</span>
+            </label>
+            <small style="color: var(--text-secondary); font-size: 11px; margin-top: 4px; display: block;">
+              Speichert alle Orderbook-Updates in der Datenbank
+            </small>
+          </div>
+
           <button type="submit" class="btn" id="addBtn">
             Monitor aktivieren
           </button>
@@ -799,6 +813,7 @@
       const tokenId = document.getElementById('tokenId').value.trim();
       const threshold = parseFloat(document.getElementById('threshold').value);
       const type = document.querySelector('input[name="type"]:checked').value;
+      const trackOrderbook = document.getElementById('trackOrderbook').checked;
 
       if (!tokenId || !threshold || !ws) return;
 
@@ -806,12 +821,14 @@
         type: 'add_monitor',
         tokenId: tokenId,
         threshold: threshold,
-        monitorType: type
+        monitorType: type,
+        trackOrderbook: trackOrderbook
       }));
 
       // Reset Form
       document.getElementById('tokenId').value = '';
       document.getElementById('threshold').value = '';
+      document.getElementById('trackOrderbook').checked = false;
     }
 
     function removeMonitor(tokenId) {
