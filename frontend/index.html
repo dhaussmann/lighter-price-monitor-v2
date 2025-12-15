@@ -599,20 +599,6 @@
             </div>
           </div>
 
-          <div class="form-group">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input
-                type="checkbox"
-                id="trackOrderbook"
-                style="width: auto; cursor: pointer;"
-              />
-              <span>📚 Orderbook speichern (Asks & Bids)</span>
-            </label>
-            <small style="color: var(--text-secondary); font-size: 11px; margin-top: 4px; display: block;">
-              Speichert alle Orderbook-Updates in der Datenbank
-            </small>
-          </div>
-
           <button type="submit" class="btn" id="addBtn">
             Monitor aktivieren
           </button>
@@ -641,8 +627,50 @@
           Alle löschen
         </button>
       </div>
-      
+
       <div id="alertsTable"></div>
+    </div>
+
+    <div class="main-grid">
+      <div class="card">
+        <h2 class="card-title">
+          <span>📚</span>
+          Orderbook Tracking
+        </h2>
+        <div class="info-box" style="margin-bottom: 20px;">
+          <strong>ℹ️ Orderbook Tracking</strong>
+          Speichert kontinuierlich alle Orderbook-Updates (Asks & Bids) für einen Market. Läuft unabhängig von Preis-Alarmen.
+        </div>
+        <form id="orderbookForm">
+          <div class="form-group">
+            <label>Market auswählen</label>
+            <input
+              type="text"
+              id="orderbookMarketId"
+              list="orderbookTokenList"
+              placeholder="Wähle einen Market oder gib Market ID ein (z.B. 0 für ETH)"
+              required
+            />
+            <datalist id="orderbookTokenList">
+              <!-- Wird dynamisch geladen von Lighter API -->
+            </datalist>
+          </div>
+
+          <button type="submit" class="btn" id="addOrderbookBtn">
+            Tracking starten
+          </button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">
+          <span>📊</span>
+          Aktive Orderbook Tracker
+          <span id="orderbookTrackerCount" style="margin-left: auto; font-size: 18px; color: var(--text-secondary);">(0)</span>
+        </h2>
+
+        <div id="orderbookTrackersTable"></div>
+      </div>
     </div>
   </div>
 
@@ -659,6 +687,7 @@
     let ws = null;
     let monitors = [];
     let alerts = [];
+    let orderbookTrackers = [];  // Separate orderbook trackers
     let reconnectTimer = null;
     let markets = [];  // Lighter markets
 
@@ -670,6 +699,11 @@
       document.getElementById('monitorForm').addEventListener('submit', (e) => {
         e.preventDefault();
         addMonitor();
+      });
+
+      document.getElementById('orderbookForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        addOrderbookTracker();
       });
     });
 
@@ -684,11 +718,13 @@
             .filter(m => m.status === 'active')
             .sort((a, b) => a.market_id - b.market_id);
 
-          // Update Token-Dropdown
-          const datalist = document.getElementById('tokenList');
-          datalist.innerHTML = markets.map(m =>
+          const marketOptions = markets.map(m =>
             `<option value="${m.market_id}">${m.symbol} (ID: ${m.market_id})</option>`
           ).join('');
+
+          // Update both dropdowns
+          document.getElementById('tokenList').innerHTML = marketOptions;
+          document.getElementById('orderbookTokenList').innerHTML = marketOptions;
 
           console.log(`Loaded ${markets.length} markets from Lighter`);
         }
@@ -737,19 +773,21 @@
       switch (message.type) {
         case 'current_state':
           monitors = message.data.monitors || [];
+          orderbookTrackers = message.data.orderbookTrackers || [];
           updateMonitorsTable();
+          updateOrderbookTrackersTable();
           updateStats();
           if (message.data.connected) {
             updateStatus('monitoring', 'Monitoring aktiv');
           }
           break;
-        
+
         case 'monitor_added':
           monitors.push(message.data);
           updateMonitorsTable();
           updateStats();
           break;
-        
+
         case 'monitor_removed':
           monitors = monitors.filter(m => m.tokenId !== message.data.tokenId);
           alerts = alerts.filter(a => a.token_id !== message.data.tokenId);
@@ -757,7 +795,7 @@
           updateAlertsTable();
           updateStats();
           break;
-        
+
         case 'price_update':
           const monitor = monitors.find(m => m.tokenId === message.data.tokenId);
           if (monitor) {
@@ -766,9 +804,9 @@
             updateMonitorsTable();
           }
           break;
-        
+
         case 'price_alert':
-          // Neuer Alert! 
+          // Neuer Alert!
           const alertData = {
             id: message.data.id,
             token_id: message.data.tokenId,
@@ -781,7 +819,7 @@
           alerts.unshift(alertData);
           updateAlertsTable();
           updateStats();
-          
+
           // Zeige Browser-Notification (optional)
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(`Preis-Alarm: ${alertData.token_id}`, {
@@ -790,13 +828,13 @@
             });
           }
           break;
-        
+
         case 'alert_history':
           alerts = message.data || [];
           updateAlertsTable();
           updateStats();
           break;
-        
+
         case 'alerts_cleared':
           if (message.data.tokenId) {
             alerts = alerts.filter(a => a.token_id !== message.data.tokenId);
@@ -806,6 +844,27 @@
           updateAlertsTable();
           updateStats();
           break;
+
+        case 'orderbook_tracker_added':
+          orderbookTrackers.push(message.data);
+          updateOrderbookTrackersTable();
+          break;
+
+        case 'orderbook_tracker_removed':
+          orderbookTrackers = orderbookTrackers.filter(t => t.marketId !== message.data.marketId);
+          updateOrderbookTrackersTable();
+          break;
+
+        case 'orderbook_stats_update':
+          const tracker = orderbookTrackers.find(t => t.marketId === message.data.marketId);
+          if (tracker) {
+            tracker.entryCount = message.data.entryCount;
+            tracker.asksCount = message.data.asksCount;
+            tracker.bidsCount = message.data.bidsCount;
+            tracker.lastUpdate = message.data.lastUpdate;
+            updateOrderbookTrackersTable();
+          }
+          break;
       }
     }
 
@@ -813,7 +872,6 @@
       const tokenId = document.getElementById('tokenId').value.trim();
       const threshold = parseFloat(document.getElementById('threshold').value);
       const type = document.querySelector('input[name="type"]:checked').value;
-      const trackOrderbook = document.getElementById('trackOrderbook').checked;
 
       if (!tokenId || !threshold || !ws) return;
 
@@ -821,14 +879,12 @@
         type: 'add_monitor',
         tokenId: tokenId,
         threshold: threshold,
-        monitorType: type,
-        trackOrderbook: trackOrderbook
+        monitorType: type
       }));
 
       // Reset Form
       document.getElementById('tokenId').value = '';
       document.getElementById('threshold').value = '';
-      document.getElementById('trackOrderbook').checked = false;
     }
 
     function removeMonitor(tokenId) {
@@ -842,10 +898,100 @@
 
     function clearAllAlerts() {
       if (!ws || !confirm('Alle Alarme wirklich löschen?')) return;
-      
+
       ws.send(JSON.stringify({
         type: 'clear_alerts'
       }));
+    }
+
+    function addOrderbookTracker() {
+      const marketId = document.getElementById('orderbookMarketId').value.trim();
+
+      if (!marketId || !ws) return;
+
+      ws.send(JSON.stringify({
+        type: 'add_orderbook_tracker',
+        marketId: marketId
+      }));
+
+      // Reset Form
+      document.getElementById('orderbookMarketId').value = '';
+    }
+
+    function removeOrderbookTracker(marketId) {
+      if (!ws || !confirm(`Orderbook Tracking für Market ${marketId} wirklich beenden?`)) return;
+
+      ws.send(JSON.stringify({
+        type: 'remove_orderbook_tracker',
+        marketId: marketId
+      }));
+    }
+
+    function getMarketSymbol(marketId) {
+      const market = markets.find(m => m.market_id === marketId || m.market_id === parseInt(marketId));
+      return market ? market.symbol : `Market ${marketId}`;
+    }
+
+    function formatDataSize(entryCount) {
+      // Rough estimate: each entry ~150 bytes
+      const bytes = entryCount * 150;
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+
+    function updateOrderbookTrackersTable() {
+      const container = document.getElementById('orderbookTrackersTable');
+      document.getElementById('orderbookTrackerCount').textContent = `(${orderbookTrackers.length})`;
+
+      if (orderbookTrackers.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">📚</div>
+            <p>Keine aktiven Orderbook Tracker</p>
+            <p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">
+              Starte das Tracking für einen Market, um Orderbook-Daten zu sammeln
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = `
+        <table>
+          <thead>
+            <tr>
+              <th>Market</th>
+              <th>Symbol</th>
+              <th>Einträge gesamt</th>
+              <th>Asks</th>
+              <th>Bids</th>
+              <th>Datengröße</th>
+              <th>Letzte Aktualisierung</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orderbookTrackers.map(t => `
+              <tr>
+                <td><span class="token-id">${t.marketId}</span></td>
+                <td>${getMarketSymbol(t.marketId)}</td>
+                <td class="price">${(t.entryCount || 0).toLocaleString('de-DE')}</td>
+                <td class="price" style="color: var(--accent-red);">${(t.asksCount || 0).toLocaleString('de-DE')}</td>
+                <td class="price" style="color: var(--accent-green);">${(t.bidsCount || 0).toLocaleString('de-DE')}</td>
+                <td class="price">${formatDataSize(t.entryCount || 0)}</td>
+                <td class="timestamp">${formatTime(t.lastUpdate)}</td>
+                <td>
+                  <button class="btn-secondary" onclick="removeOrderbookTracker('${t.marketId}')">
+                    Stoppen
+                  </button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+      container.innerHTML = html;
     }
 
     function updateMonitorsTable() {
