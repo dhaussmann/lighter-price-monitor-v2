@@ -817,6 +817,98 @@ export default {
       }
     }
 
+    // HTTP API: Token-Übersicht (Datenbankstatus pro Token)
+    if (url.pathname === '/api/overview') {
+      try {
+        // Orderbook-Daten pro Token
+        const orderbookStats = await env.DB.prepare(
+          `SELECT
+            normalized_symbol,
+            source,
+            COUNT(*) as total_entries,
+            COUNT(CASE WHEN side = 'ask' THEN 1 END) as asks_count,
+            COUNT(CASE WHEN side = 'bid' THEN 1 END) as bids_count,
+            MAX(timestamp) as last_entry,
+            MIN(timestamp) as first_entry
+           FROM orderbook_entries
+           GROUP BY normalized_symbol, source
+           ORDER BY normalized_symbol, source`
+        ).all();
+
+        // Paradex Trades pro Token
+        const tradeStats = await env.DB.prepare(
+          `SELECT
+            normalized_symbol,
+            COUNT(*) as total_trades,
+            COUNT(CASE WHEN trade_type = 'RPI' THEN 1 END) as rpi_count,
+            COUNT(CASE WHEN trade_type = 'FILL' THEN 1 END) as fill_count,
+            MAX(created_at) as last_trade
+           FROM paradex_trades
+           GROUP BY normalized_symbol
+           ORDER BY normalized_symbol`
+        ).all();
+
+        // Kombiniere die Daten
+        const overview: any = {};
+
+        // Orderbook-Daten einpflegen
+        for (const row of orderbookStats.results || []) {
+          const symbol = row.normalized_symbol as string;
+          if (!overview[symbol]) {
+            overview[symbol] = {
+              symbol,
+              sources: {},
+              trades: null
+            };
+          }
+
+          overview[symbol].sources[row.source as string] = {
+            total_entries: row.total_entries,
+            asks_count: row.asks_count,
+            bids_count: row.bids_count,
+            last_entry: row.last_entry,
+            first_entry: row.first_entry
+          };
+        }
+
+        // Trade-Daten einpflegen
+        for (const row of tradeStats.results || []) {
+          const symbol = row.normalized_symbol as string;
+          if (!overview[symbol]) {
+            overview[symbol] = {
+              symbol,
+              sources: {},
+              trades: null
+            };
+          }
+
+          overview[symbol].trades = {
+            total_trades: row.total_trades,
+            rpi_count: row.rpi_count,
+            fill_count: row.fill_count,
+            last_trade: row.last_trade
+          };
+        }
+
+        // In Array umwandeln
+        const tokens = Object.values(overview).sort((a: any, b: any) =>
+          a.symbol.localeCompare(b.symbol)
+        );
+
+        return new Response(JSON.stringify({
+          tokens,
+          timestamp: Date.now()
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error', details: String(error) }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
     // Statische Info-Seite
     if (url.pathname === '/') {
       return new Response('Multi-Exchange Orderbook Tracker - Lighter + Paradex', {
