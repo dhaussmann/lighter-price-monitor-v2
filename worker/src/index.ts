@@ -8,6 +8,690 @@ export interface Env {
   DB: D1Database;
 }
 
+// Frontend HTML Templates
+const INDEX_HTML = `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Exchange Orderbook Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0b0d;
+      --bg-secondary: #13141a;
+      --bg-card: #1a1c26;
+      --accent-green: #00ff88;
+      --accent-red: #ff3366;
+      --accent-blue: #00d4ff;
+      --accent-purple: #b64eff;
+      --text-primary: #ffffff;
+      --text-secondary: #8b92a8;
+      --border: #2a2d3a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow-x: hidden;
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 50px 50px;
+      opacity: 0.3;
+      animation: gridMove 20s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes gridMove {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(50px, 50px); }
+    }
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+      animation: float 8s ease-in-out infinite;
+    }
+    .orb-1 {
+      width: 400px;
+      height: 400px;
+      background: var(--accent-green);
+      top: -200px;
+      left: -200px;
+      opacity: 0.1;
+    }
+    .orb-2 {
+      width: 300px;
+      height: 300px;
+      background: var(--accent-purple);
+      bottom: -150px;
+      right: -150px;
+      opacity: 0.08;
+      animation-delay: -4s;
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(30px, -30px) scale(1.1); }
+    }
+    .container { max-width: 1600px; margin: 0 auto; padding: 40px 20px; position: relative; z-index: 1; }
+    header { margin-bottom: 40px; text-align: center; }
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 72px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 16px;
+      letter-spacing: -2px;
+      animation: slideDown 0.8s ease-out;
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .subtitle { font-size: 18px; color: var(--text-secondary); animation: fadeIn 1s ease-out 0.3s both; }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .connections { display: flex; gap: 16px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+    .connection-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      font-size: 13px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .connection-badge.connected .status-dot { background: var(--accent-green); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.9); }
+    }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+    }
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    .stat-value {
+      font-size: 36px;
+      font-weight: 700;
+      font-family: 'Syne', sans-serif;
+      color: var(--accent-green);
+    }
+    .stat-sub { font-size: 11px; color: var(--text-secondary); margin-top: 8px; }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 30px;
+      margin-bottom: 30px;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .card:hover::before { opacity: 1; }
+    .card-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead { background: var(--bg-secondary); }
+    th {
+      padding: 16px;
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: all 0.2s ease; }
+    tbody tr:hover { background: var(--bg-secondary); }
+    td { padding: 16px; font-size: 14px; }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-lighter {
+      background: rgba(0, 255, 136, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+    }
+    .badge-paradex {
+      background: rgba(0, 212, 255, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+    }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+    .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+    .loading {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent-green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .info-box {
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: var(--accent-blue);
+    }
+    .info-box strong { display: block; margin-bottom: 8px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="container">
+    <header>
+      <h1>ORDERBOOK TRACKER</h1>
+      <p class="subtitle">Multi-Exchange Orderbook Data • Lighter + Paradex • Automatisches Tracking ALLER Markets</p>
+      <div class="connections">
+        <div id="lighterBadge" class="connection-badge">
+          <span class="status-dot"></span>
+          <span>Lighter: <span id="lighterStatus">Connecting...</span></span>
+        </div>
+        <div id="paradexBadge" class="connection-badge">
+          <span class="status-dot"></span>
+          <span>Paradex: <span id="paradexStatus">Connecting...</span></span>
+        </div>
+      </div>
+    </header>
+    <div class="info-box">
+      <strong>🚀 Automatisches Tracking</strong>
+      Dieser Tracker überwacht automatisch ALLE verfügbaren Markets von Lighter und Paradex. Keine Konfiguration notwendig - alle Orderbook-Daten und Paradex-Trades (inkl. RPI) werden persistent gespeichert!
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Lighter Markets</div>
+        <div class="stat-value" id="statLighterMarkets">-</div>
+        <div class="stat-sub" id="statLighterEntries">- Einträge</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Paradex Markets</div>
+        <div class="stat-value" id="statParadexMarkets">-</div>
+        <div class="stat-sub" id="statParadexEntries">- Einträge</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Paradex RPI Trades</div>
+        <div class="stat-value" id="statRPITrades">-</div>
+        <div class="stat-sub" id="statTotalTrades">- Trades gesamt</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Unique Symbols</div>
+        <div class="stat-value" id="statUniqueSymbols">-</div>
+        <div class="stat-sub">Normalisierte Token</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 class="card-title"><span>📊</span>Tracked Markets</h2>
+      <div id="marketsTable">
+        <div class="empty-state">
+          <div class="empty-icon">⏳</div>
+          <p>Loading markets...</p>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 class="card-title"><span>💹</span>API Endpoints</h2>
+      <div style="font-size: 14px; line-height: 1.8;">
+        <p style="margin-bottom: 16px;"><strong>Orderbook Daten abrufen:</strong></p>
+        <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;">
+          GET /api/orderbook/{market_or_symbol}?source=lighter|paradex&timeframe=1m|5m|15m|30m|1h&side=ask|bid&limit=100
+        </code>
+        <p style="margin: 24px 0 16px;"><strong>Paradex Trades abrufen:</strong></p>
+        <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;">
+          GET /api/trades/{market_or_symbol}?type=RPI|FILL&timeframe=1m|5m|15m|30m|1h&limit=100
+        </code>
+        <p style="margin: 24px 0 16px;"><strong>Alle verfügbaren Markets:</strong></p>
+        <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;">GET /api/markets</code>
+      </div>
+    </div>
+  </div>
+  <script>
+    const WS_URL = window.location.protocol === 'https:' ? 'wss://' + window.location.host + '/ws' : 'ws://' + window.location.host + '/ws';
+    let ws = null;
+    let reconnectTimer = null;
+    let markets = [];
+    document.addEventListener('DOMContentLoaded', () => {
+      connectWebSocket();
+      loadMarkets();
+      setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'get_stats' }));
+        }
+      }, 10000);
+    });
+    function connectWebSocket() {
+      try {
+        ws = new WebSocket(WS_URL);
+        ws.onopen = () => {
+          console.log('WebSocket connected');
+          ws.send(JSON.stringify({ type: 'get_stats' }));
+          ws.send(JSON.stringify({ type: 'get_markets' }));
+        };
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          handleMessage(message);
+        };
+        ws.onclose = () => {
+          console.log('WebSocket disconnected');
+          updateConnectionStatus(false, false);
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connectWebSocket, 5000);
+        };
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+        };
+      } catch (error) {
+        console.error('Failed to connect:', error);
+      }
+    }
+    function handleMessage(message) {
+      switch (message.type) {
+        case 'stats':
+          updateStats(message.data);
+          break;
+        case 'markets':
+          markets = message.data;
+          break;
+      }
+    }
+    function updateStats(data) {
+      updateConnectionStatus(data.lighter_connected, data.paradex_connected);
+      document.getElementById('statLighterMarkets').textContent = data.lighter_markets || 0;
+      document.getElementById('statParadexMarkets').textContent = data.paradex_markets || 0;
+      const lighterStats = data.orderbook.find(s => s.source === 'lighter');
+      const paradexStats = data.orderbook.find(s => s.source === 'paradex');
+      document.getElementById('statLighterEntries').textContent = (lighterStats?.total_entries || 0).toLocaleString('de-DE') + ' Einträge';
+      document.getElementById('statParadexEntries').textContent = (paradexStats?.total_entries || 0).toLocaleString('de-DE') + ' Einträge';
+      document.getElementById('statRPITrades').textContent = (data.trades?.rpi_trades || 0).toLocaleString('de-DE');
+      document.getElementById('statTotalTrades').textContent = (data.trades?.total_trades || 0).toLocaleString('de-DE') + ' Trades gesamt';
+      const uniqueSymbols = new Set([
+        ...((lighterStats?.unique_symbols || 0) > 0 ? [lighterStats.unique_symbols] : []),
+        ...((paradexStats?.unique_symbols || 0) > 0 ? [paradexStats.unique_symbols] : [])
+      ]);
+      document.getElementById('statUniqueSymbols').textContent = Math.max(lighterStats?.unique_symbols || 0, paradexStats?.unique_symbols || 0);
+    }
+    function updateConnectionStatus(lighterConnected, paradexConnected) {
+      const lighterBadge = document.getElementById('lighterBadge');
+      const lighterStatus = document.getElementById('lighterStatus');
+      const paradexBadge = document.getElementById('paradexBadge');
+      const paradexStatus = document.getElementById('paradexStatus');
+      if (lighterConnected) {
+        lighterBadge.classList.add('connected');
+        lighterStatus.textContent = 'Connected';
+      } else {
+        lighterBadge.classList.remove('connected');
+        lighterStatus.textContent = 'Disconnected';
+      }
+      if (paradexConnected) {
+        paradexBadge.classList.add('connected');
+        paradexStatus.textContent = 'Connected';
+      } else {
+        paradexBadge.classList.remove('connected');
+        paradexStatus.textContent = 'Disconnected';
+      }
+    }
+    async function loadMarkets() {
+      try {
+        const response = await fetch('/api/markets');
+        const data = await response.json();
+        updateMarketsTable(data.markets || []);
+      } catch (error) {
+        console.error('Failed to load markets:', error);
+      }
+    }
+    function updateMarketsTable(marketList) {
+      const container = document.getElementById('marketsTable');
+      if (marketList.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Keine Markets gefunden</p></div>';
+        return;
+      }
+      const grouped = {};
+      for (const market of marketList) {
+        if (!grouped[market.normalized_symbol]) {
+          grouped[market.normalized_symbol] = [];
+        }
+        grouped[market.normalized_symbol].push(market);
+      }
+      const html = '<table><thead><tr><th>Symbol</th><th>Base Asset</th><th>Quote Asset</th><th>Type</th><th>Sources</th><th>Market IDs</th></tr></thead><tbody>' +
+        Object.keys(grouped).sort().map(symbol => {
+          const markets = grouped[symbol];
+          const sources = markets.map(m => m.source);
+          const marketIds = markets.map(m => m.source + ':' + m.original_symbol).join(', ');
+          return '<tr><td><strong>' + symbol + '</strong></td><td>' + markets[0].base_asset + '</td><td>' + markets[0].quote_asset + '</td><td>' + markets[0].market_type + '</td><td>' +
+            (sources.includes('lighter') ? '<span class="badge badge-lighter">Lighter</span> ' : '') +
+            (sources.includes('paradex') ? '<span class="badge badge-paradex">Paradex</span>' : '') +
+            '</td><td style="font-size: 11px; color: var(--text-secondary);">' + marketIds + '</td></tr>';
+        }).join('') + '</tbody></table>';
+      container.innerHTML = html;
+    }
+  </script>
+</body>
+</html>`;
+
+const DASHBOARD_HTML = `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Database Overview - Orderbook Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0b0d;
+      --bg-secondary: #13141a;
+      --bg-card: #1a1c26;
+      --accent-green: #00ff88;
+      --accent-red: #ff3366;
+      --accent-blue: #00d4ff;
+      --accent-purple: #b64eff;
+      --text-primary: #ffffff;
+      --text-secondary: #8b92a8;
+      --border: #2a2d3a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'JetBrains Mono', monospace; background: var(--bg-primary); color: var(--text-primary); padding: 20px; }
+    .header { text-align: center; margin-bottom: 30px; }
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 48px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+    .subtitle { font-size: 14px; color: var(--text-secondary); }
+    .refresh-info {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      margin-top: 16px;
+    }
+    .refresh-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .container { max-width: 1600px; margin: 0 auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-card);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    thead { background: var(--bg-secondary); }
+    th {
+      padding: 16px;
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      font-weight: 600;
+      border-bottom: 2px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.2s ease; }
+    tbody tr:hover { background: var(--bg-secondary); }
+    tbody tr.updated { animation: highlight 1s ease; }
+    @keyframes highlight {
+      0%, 100% { background: var(--bg-card); }
+      50% { background: rgba(0, 255, 136, 0.1); }
+    }
+    td { padding: 16px; font-size: 14px; }
+    .token-symbol {
+      font-size: 18px;
+      font-weight: 700;
+      font-family: 'Syne', sans-serif;
+      color: var(--accent-green);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-right: 6px;
+    }
+    .badge-lighter {
+      background: rgba(0, 255, 136, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+    }
+    .badge-paradex {
+      background: rgba(0, 212, 255, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+    }
+    .stat { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+    .stat-label {
+      color: var(--text-secondary);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .stat-value { color: var(--text-primary); font-weight: 600; }
+    .timestamp { font-size: 11px; color: var(--text-secondary); }
+    .time-ago { font-size: 10px; color: var(--accent-blue); font-style: italic; }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent-green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .no-data { color: var(--text-secondary); font-size: 12px; font-style: italic; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 DATABASE OVERVIEW</h1>
+      <p class="subtitle">Live-Übersicht aller gespeicherten Token-Daten</p>
+      <div class="refresh-info">
+        <span class="refresh-dot"></span>
+        <span>Auto-Refresh alle 30 Sekunden</span>
+        <span id="lastUpdate" style="margin-left: 12px; opacity: 0.6;">-</span>
+      </div>
+    </div>
+    <div id="tableContainer">
+      <div class="empty-state">
+        <div class="loading"></div>
+        <p style="margin-top: 16px;">Lade Daten...</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    const API_URL = '/api/overview';
+    let previousData = new Map();
+    loadData();
+    setInterval(loadData, 30000);
+    async function loadData() {
+      try {
+        const response = await fetch(API_URL);
+        const data = await response.json();
+        renderTable(data.tokens);
+        updateLastUpdateTime();
+      } catch (error) {
+        console.error('Error loading data:', error);
+        document.getElementById('tableContainer').innerHTML = '<div class="empty-state"><p style="color: var(--accent-red);">❌ Fehler beim Laden der Daten</p><p style="font-size: 12px; margin-top: 8px;">' + error.message + '</p></div>';
+      }
+    }
+    function renderTable(tokens) {
+      const container = document.getElementById('tableContainer');
+      if (!tokens || tokens.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>📭 Keine Daten in der Datenbank</p><p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">Warte auf erste Orderbook-Updates...</p></div>';
+        return;
+      }
+      const html = '<table><thead><tr><th>Token</th><th>Sources</th><th>Lighter Einträge</th><th>Paradex Einträge</th><th>Paradex Trades</th><th>Letzter Eintrag</th></tr></thead><tbody>' +
+        tokens.map(token => renderTokenRow(token)).join('') + '</tbody></table>';
+      container.innerHTML = html;
+    }
+    function renderTokenRow(token) {
+      const lighter = token.sources.lighter || null;
+      const paradex = token.sources.paradex || null;
+      const trades = token.trades || null;
+      const prevKey = token.symbol;
+      const prevData = previousData.get(prevKey);
+      const currentData = {
+        lighter: lighter?.total_entries || 0,
+        paradex: paradex?.total_entries || 0,
+        trades: trades?.total_trades || 0
+      };
+      const hasChanged = prevData && (prevData.lighter !== currentData.lighter || prevData.paradex !== currentData.paradex || prevData.trades !== currentData.trades);
+      previousData.set(prevKey, currentData);
+      let latestTimestamp = 0;
+      if (lighter && lighter.last_entry > latestTimestamp) latestTimestamp = lighter.last_entry;
+      if (paradex && paradex.last_entry > latestTimestamp) latestTimestamp = paradex.last_entry;
+      if (trades && trades.last_trade > latestTimestamp) latestTimestamp = trades.last_trade;
+      return '<tr class="' + (hasChanged ? 'updated' : '') + '"><td><div class="token-symbol">' + token.symbol + '</div></td><td>' +
+        (lighter ? '<span class="badge badge-lighter">Lighter</span>' : '') +
+        (paradex ? '<span class="badge badge-paradex">Paradex</span>' : '') +
+        '</td><td>' +
+        (lighter ? '<div class="stat"><span class="stat-label">Total</span><span class="stat-value">' + formatNumber(lighter.total_entries) + '</span><span style="font-size: 11px; color: var(--text-secondary); margin-left: 8px;">(' + formatNumber(lighter.asks_count) + ' asks, ' + formatNumber(lighter.bids_count) + ' bids)</span></div>' : '<span class="no-data">-</span>') +
+        '</td><td>' +
+        (paradex ? '<div class="stat"><span class="stat-label">Total</span><span class="stat-value">' + formatNumber(paradex.total_entries) + '</span><span style="font-size: 11px; color: var(--text-secondary); margin-left: 8px;">(' + formatNumber(paradex.asks_count) + ' asks, ' + formatNumber(paradex.bids_count) + ' bids)</span></div>' : '<span class="no-data">-</span>') +
+        '</td><td>' +
+        (trades ? '<div class="stat"><span class="stat-label">Total</span><span class="stat-value">' + formatNumber(trades.total_trades) + '</span><span style="font-size: 11px; color: var(--text-secondary); margin-left: 8px;">(' + formatNumber(trades.rpi_count) + ' RPI, ' + formatNumber(trades.fill_count) + ' FILL)</span></div>' : '<span class="no-data">-</span>') +
+        '</td><td>' +
+        (latestTimestamp ? '<div class="timestamp">' + formatTimestamp(latestTimestamp) + '</div><div class="time-ago">' + getTimeAgo(latestTimestamp) + '</div>' : '<span class="no-data">-</span>') +
+        '</td></tr>';
+    }
+    function formatNumber(num) {
+      return num ? num.toLocaleString('de-DE') : '0';
+    }
+    function formatTimestamp(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+    function getTimeAgo(timestamp) {
+      const now = Date.now();
+      const diff = now - timestamp;
+      const seconds = Math.floor(diff / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+      if (days > 0) return 'vor ' + days + ' Tag' + (days > 1 ? 'en' : '');
+      if (hours > 0) return 'vor ' + hours + ' Stunde' + (hours > 1 ? 'n' : '');
+      if (minutes > 0) return 'vor ' + minutes + ' Minute' + (minutes > 1 ? 'n' : '');
+      return 'vor ' + seconds + ' Sekunde' + (seconds !== 1 ? 'n' : '');
+    }
+    function updateLastUpdateTime() {
+      const now = new Date();
+      document.getElementById('lastUpdate').textContent = now.toLocaleTimeString('de-DE');
+    }
+  </script>
+</body>
+</html>`;
+
 // Durable Object für persistentes Orderbook-Tracking
 export class OrderbookTracker {
   private state: DurableObjectState;
@@ -913,10 +1597,23 @@ export default {
       }
     }
 
-    // Statische Info-Seite
-    if (url.pathname === '/') {
-      return new Response('Multi-Exchange Orderbook Tracker - Lighter + Paradex', {
-        headers: { ...corsHeaders, 'Content-Type': 'text/plain' }
+    // Frontend: Dashboard
+    if (url.pathname === '/dashboard' || url.pathname === '/dashboard.html') {
+      return new Response(DASHBOARD_HTML, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/html; charset=utf-8'
+        }
+      });
+    }
+
+    // Frontend: Main Page
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      return new Response(INDEX_HTML, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/html; charset=utf-8'
+        }
       });
     }
 
