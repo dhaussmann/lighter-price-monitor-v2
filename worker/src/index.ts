@@ -638,12 +638,120 @@ export default {
       try {
         const limit = parseInt(url.searchParams.get('limit') || '100');
         const result = await env.DB.prepare(
-          `SELECT * FROM alerts 
-           ORDER BY timestamp DESC 
+          `SELECT * FROM alerts
+           ORDER BY timestamp DESC
            LIMIT ?`
         ).bind(limit).all();
 
         return new Response(JSON.stringify(result.results), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // HTTP API: Orderbook-Daten abrufen
+    if (url.pathname.startsWith('/api/orderbook/')) {
+      try {
+        const marketId = url.pathname.replace('/api/orderbook/', '');
+
+        // Query-Parameter
+        const limit = parseInt(url.searchParams.get('limit') || '100');
+        const offset = parseInt(url.searchParams.get('offset') || '0');
+        const side = url.searchParams.get('side'); // 'ask', 'bid', oder null für beide
+        const from = url.searchParams.get('from'); // Timestamp Start
+        const to = url.searchParams.get('to'); // Timestamp Ende
+
+        // Build Query dynamisch
+        let query = 'SELECT * FROM orderbook_entries WHERE market_id = ?';
+        const bindings: any[] = [marketId];
+
+        if (side && (side === 'ask' || side === 'bid')) {
+          query += ' AND side = ?';
+          bindings.push(side);
+        }
+
+        if (from) {
+          query += ' AND timestamp >= ?';
+          bindings.push(parseInt(from));
+        }
+
+        if (to) {
+          query += ' AND timestamp <= ?';
+          bindings.push(parseInt(to));
+        }
+
+        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+        bindings.push(limit, offset);
+
+        const result = await env.DB.prepare(query).bind(...bindings).all();
+
+        // Zusätzliche Statistiken
+        const statsResult = await env.DB.prepare(
+          `SELECT
+            COUNT(*) as total_entries,
+            COUNT(CASE WHEN side = 'ask' THEN 1 END) as asks_count,
+            COUNT(CASE WHEN side = 'bid' THEN 1 END) as bids_count,
+            MAX(timestamp) as last_update,
+            MIN(timestamp) as first_entry
+           FROM orderbook_entries
+           WHERE market_id = ?`
+        ).bind(marketId).first();
+
+        return new Response(JSON.stringify({
+          marketId,
+          entries: result.results || [],
+          pagination: {
+            limit,
+            offset,
+            count: result.results?.length || 0
+          },
+          filters: {
+            side: side || 'all',
+            from: from ? parseInt(from) : null,
+            to: to ? parseInt(to) : null
+          },
+          stats: {
+            totalEntries: statsResult?.total_entries || 0,
+            asksCount: statsResult?.asks_count || 0,
+            bidsCount: statsResult?.bids_count || 0,
+            lastUpdate: statsResult?.last_update || null,
+            firstEntry: statsResult?.first_entry || null
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error', details: String(error) }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // HTTP API: Liste aller Markets mit Orderbook-Daten
+    if (url.pathname === '/api/orderbook') {
+      try {
+        const result = await env.DB.prepare(
+          `SELECT
+            market_id,
+            COUNT(*) as total_entries,
+            COUNT(CASE WHEN side = 'ask' THEN 1 END) as asks_count,
+            COUNT(CASE WHEN side = 'bid' THEN 1 END) as bids_count,
+            MAX(timestamp) as last_update,
+            MIN(timestamp) as first_entry
+           FROM orderbook_entries
+           GROUP BY market_id
+           ORDER BY last_update DESC`
+        ).all();
+
+        return new Response(JSON.stringify({
+          markets: result.results || []
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       } catch (error) {
