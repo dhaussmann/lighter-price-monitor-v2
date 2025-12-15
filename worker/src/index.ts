@@ -73,35 +73,41 @@ export class OrderbookTracker {
 
   async discoverAndTrackMarkets() {
     try {
-      // Discover Lighter markets
+      // Discover Lighter markets (LIMIT to save memory)
       const lighterResponse = await fetch('https://mainnet.zklighter.elliot.ai/api/v1/orderBooks');
       const lighterData = await lighterResponse.json();
 
       if (lighterData.code === 200 && lighterData.order_books) {
+        // Only track first 10 markets to save memory
+        let count = 0;
         for (const market of lighterData.order_books) {
-          if (market.status === 'active') {
+          if (market.status === 'active' && count < 10) {
             this.lighterMarkets.add(market.market_id);
-
-            // Add to token mapping if not exists
             await this.ensureTokenMapping('lighter', market.market_id, market.symbol);
+            count++;
           }
         }
-        console.log(`Discovered ${this.lighterMarkets.size} Lighter markets`);
+        console.log(`Tracking ${this.lighterMarkets.size} Lighter markets (limited for memory)`);
       }
 
-      // Discover Paradex markets
+      // Discover Paradex markets (LIMIT to save memory)
       const paradexResponse = await fetch('https://api.prod.paradex.trade/v1/markets');
       const paradexData = await paradexResponse.json();
 
       if (paradexData.results) {
-        for (const market of paradexData.results) {
+        // Only track top 15 markets by volume to save memory
+        const topMarkets = paradexData.results
+          .filter((m: any) => m.market_type === 'PERP')
+          .slice(0, 15);
+
+        for (const market of topMarkets) {
           this.paradexMarkets.add(market.symbol);
 
           // Extract normalized symbol (e.g., ETH-USD-PERP -> ETH)
           const baseAsset = market.symbol.split('-')[0];
           await this.ensureTokenMapping('paradex', market.symbol, baseAsset);
         }
-        console.log(`Discovered ${this.paradexMarkets.size} Paradex markets`);
+        console.log(`Tracking ${this.paradexMarkets.size} Paradex markets (limited for memory)`);
       }
     } catch (error) {
       console.error('Error discovering markets:', error);
@@ -243,51 +249,43 @@ export class OrderbookTracker {
       const { asks, bids, offset, nonce } = order_book;
       const normalizedSymbol = this.getNormalizedSymbol('lighter', marketId);
 
-      // Save asks
-      if (asks && Array.isArray(asks)) {
-        for (const ask of asks) {
-          await this.env.DB.prepare(
-            `INSERT INTO orderbook_entries
-             (source, market_id, normalized_symbol, side, price, size, timestamp, offset, nonce)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          ).bind(
-            'lighter',
-            marketId,
-            normalizedSymbol,
-            'ask',
-            parseFloat(ask.price),
-            parseFloat(ask.size),
-            timestamp,
-            offset,
-            nonce
-          ).run();
-        }
-      }
+      // Limit to 10 asks and 10 bids to save memory
+      const limitedAsks = asks?.slice(0, 10) || [];
+      const limitedBids = bids?.slice(0, 10) || [];
 
-      // Save bids
-      if (bids && Array.isArray(bids)) {
-        for (const bid of bids) {
-          await this.env.DB.prepare(
-            `INSERT INTO orderbook_entries
-             (source, market_id, normalized_symbol, side, price, size, timestamp, offset, nonce)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          ).bind(
-            'lighter',
-            marketId,
-            normalizedSymbol,
-            'bid',
-            parseFloat(bid.price),
-            parseFloat(bid.size),
-            timestamp,
-            offset,
-            nonce
-          ).run();
-        }
-      }
+      // Batch insert using single statement
+      if (limitedAsks.length > 0 || limitedBids.length > 0) {
+        const values: string[] = [];
+        const bindings: any[] = [];
 
-      const totalSaved = (asks?.length || 0) + (bids?.length || 0);
-      if (totalSaved > 0) {
-        console.log(`📚 Lighter: Saved ${totalSaved} entries for ${normalizedSymbol} (${marketId})`);
+        // Build batch insert for asks
+        for (const ask of limitedAsks) {
+          values.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          bindings.push(
+            'lighter', marketId, normalizedSymbol, 'ask',
+            parseFloat(ask.price), parseFloat(ask.size),
+            timestamp, offset, nonce
+          );
+        }
+
+        // Build batch insert for bids
+        for (const bid of limitedBids) {
+          values.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          bindings.push(
+            'lighter', marketId, normalizedSymbol, 'bid',
+            parseFloat(bid.price), parseFloat(bid.size),
+            timestamp, offset, nonce
+          );
+        }
+
+        // Single batch insert
+        const query = `INSERT INTO orderbook_entries
+          (source, market_id, normalized_symbol, side, price, size, timestamp, offset, nonce)
+          VALUES ${values.join(', ')}`;
+
+        await this.env.DB.prepare(query).bind(...bindings).run();
+
+        console.log(`📚 Lighter: Saved ${values.length} entries for ${normalizedSymbol}`);
       }
     } catch (error) {
       console.error('Error saving Lighter orderbook:', error);
@@ -424,26 +422,32 @@ export class OrderbookTracker {
 
       const normalizedSymbol = this.getNormalizedSymbol('paradex', market);
 
-      for (const entry of inserts) {
-        const side = entry.side === 'BUY' ? 'bid' : 'ask';
+      // Limit to 15 entries to save memory
+      const limitedInserts = inserts.slice(0, 15);
 
-        await this.env.DB.prepare(
-          `INSERT INTO orderbook_entries
-           (source, market_id, normalized_symbol, side, price, size, timestamp, seq_no)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          'paradex',
-          market,
-          normalizedSymbol,
-          side,
-          parseFloat(entry.price),
-          parseFloat(entry.size),
-          last_updated_at,
-          seq_no
-        ).run();
+      if (limitedInserts.length > 0) {
+        const values: string[] = [];
+        const bindings: any[] = [];
+
+        for (const entry of limitedInserts) {
+          const side = entry.side === 'BUY' ? 'bid' : 'ask';
+          values.push('(?, ?, ?, ?, ?, ?, ?, ?)');
+          bindings.push(
+            'paradex', market, normalizedSymbol, side,
+            parseFloat(entry.price), parseFloat(entry.size),
+            last_updated_at, seq_no
+          );
+        }
+
+        // Batch insert
+        const query = `INSERT INTO orderbook_entries
+          (source, market_id, normalized_symbol, side, price, size, timestamp, seq_no)
+          VALUES ${values.join(', ')}`;
+
+        await this.env.DB.prepare(query).bind(...bindings).run();
+
+        console.log(`📚 Paradex: Saved ${limitedInserts.length} entries for ${normalizedSymbol}`);
       }
-
-      console.log(`📚 Paradex: Saved ${inserts.length} entries for ${normalizedSymbol} (${market})`);
     } catch (error) {
       console.error('Error saving Paradex orderbook:', error);
     }
