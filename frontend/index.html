@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lighter Price Monitor v2 - Persistent Monitoring</title>
+  <title>Multi-Exchange Orderbook Tracker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -35,7 +35,6 @@
       position: relative;
     }
 
-    /* Animated background */
     body::before {
       content: '';
       position: fixed;
@@ -43,7 +42,7 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background-image: 
+      background-image:
         linear-gradient(var(--border) 1px, transparent 1px),
         linear-gradient(90deg, var(--border) 1px, transparent 1px);
       background-size: 50px 50px;
@@ -133,7 +132,15 @@
       to { opacity: 1; }
     }
 
-    .status-badge {
+    .connections {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+
+    .connection-badge {
       display: inline-flex;
       align-items: center;
       gap: 8px;
@@ -142,8 +149,6 @@
       border: 1px solid var(--border);
       border-radius: 30px;
       font-size: 13px;
-      margin-top: 20px;
-      animation: fadeIn 1s ease-out 0.6s both;
     }
 
     .status-dot {
@@ -154,12 +159,8 @@
       animation: pulse 2s ease-in-out infinite;
     }
 
-    .status-badge.connected .status-dot {
+    .connection-badge.connected .status-dot {
       background: var(--accent-green);
-    }
-
-    .status-badge.monitoring .status-dot {
-      background: var(--accent-blue);
     }
 
     @keyframes pulse {
@@ -167,17 +168,53 @@
       50% { opacity: 0.5; transform: scale(0.9); }
     }
 
-    .main-grid {
+    .stats-grid {
       display: grid;
-      grid-template-columns: 400px 1fr;
-      gap: 30px;
-      margin-bottom: 30px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
     }
 
-    @media (max-width: 1024px) {
-      .main-grid {
-        grid-template-columns: 1fr;
-      }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+    }
+
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    .stat-value {
+      font-size: 36px;
+      font-weight: 700;
+      font-family: 'Syne', sans-serif;
+      color: var(--accent-green);
+    }
+
+    .stat-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 8px;
     }
 
     .card {
@@ -185,6 +222,7 @@
       border: 1px solid var(--border);
       border-radius: 20px;
       padding: 30px;
+      margin-bottom: 30px;
       position: relative;
       overflow: hidden;
     }
@@ -213,143 +251,6 @@
       display: flex;
       align-items: center;
       gap: 12px;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    label {
-      display: block;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-      font-weight: 600;
-    }
-
-    input[type="text"],
-    input[type="number"] {
-      width: 100%;
-      padding: 14px 16px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 14px;
-      transition: all 0.2s ease;
-    }
-
-    input:focus {
-      outline: none;
-      border-color: var(--accent-green);
-      box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.1);
-    }
-
-    input::placeholder {
-      color: var(--text-secondary);
-      opacity: 0.5;
-    }
-
-    .radio-group {
-      display: flex;
-      gap: 12px;
-      margin-top: 8px;
-    }
-
-    .radio-option {
-      flex: 1;
-      position: relative;
-    }
-
-    .radio-option input[type="radio"] {
-      position: absolute;
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .radio-label {
-      display: block;
-      padding: 12px;
-      background: var(--bg-secondary);
-      border: 2px solid var(--border);
-      border-radius: 10px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-size: 13px;
-    }
-
-    .radio-option input[type="radio"]:checked + .radio-label {
-      background: rgba(0, 255, 136, 0.1);
-      border-color: var(--accent-green);
-      color: var(--accent-green);
-    }
-
-    .radio-label:hover {
-      border-color: var(--accent-green);
-      transform: translateY(-2px);
-    }
-
-    .btn {
-      width: 100%;
-      padding: 16px;
-      background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
-      border: none;
-      border-radius: 12px;
-      color: var(--bg-primary);
-      font-family: 'Syne', sans-serif;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .btn::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-      transition: left 0.5s ease;
-    }
-
-    .btn:hover::before {
-      left: 100%;
-    }
-
-    .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 30px rgba(0, 255, 136, 0.3);
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-secondary {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-secondary);
-      padding: 10px 16px;
-      font-size: 13px;
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255, 51, 102, 0.1);
-      border-color: var(--accent-red);
-      color: var(--accent-red);
-      box-shadow: none;
     }
 
     table {
@@ -381,28 +282,9 @@
       background: var(--bg-secondary);
     }
 
-    tbody tr.new-alert {
-      animation: highlight 0.8s ease;
-    }
-
-    @keyframes highlight {
-      0%, 100% { background: var(--bg-card); }
-      50% { background: rgba(0, 255, 136, 0.15); }
-    }
-
     td {
       padding: 16px;
       font-size: 14px;
-    }
-
-    .token-id {
-      font-weight: 600;
-      color: var(--accent-blue);
-    }
-
-    .price {
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 600;
     }
 
     .badge {
@@ -415,21 +297,16 @@
       letter-spacing: 0.5px;
     }
 
-    .badge-above {
-      background: rgba(255, 51, 102, 0.15);
-      color: var(--accent-red);
-      border: 1px solid rgba(255, 51, 102, 0.3);
-    }
-
-    .badge-below {
+    .badge-lighter {
       background: rgba(0, 255, 136, 0.15);
       color: var(--accent-green);
       border: 1px solid rgba(0, 255, 136, 0.3);
     }
 
-    .timestamp {
-      font-size: 11px;
-      color: var(--text-secondary);
+    .badge-paradex {
+      background: rgba(0, 212, 255, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(0, 212, 255, 0.3);
     }
 
     .empty-state {
@@ -473,265 +350,116 @@
       margin-bottom: 8px;
       font-size: 14px;
     }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    .stat-card {
-      background: var(--bg-secondary);
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-    }
-
-    .stat-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-    }
-
-    .stat-value {
-      font-size: 28px;
-      font-weight: 700;
-      font-family: 'Syne', sans-serif;
-      color: var(--accent-green);
-    }
   </style>
 </head>
 <body>
   <div class="orb orb-1"></div>
   <div class="orb orb-2"></div>
-  
+
   <div class="container">
     <header>
-      <h1>LIGHTER MONITOR v2</h1>
-      <p class="subtitle">Persistente Hintergrund-Überwachung • Läuft auch wenn du offline bist</p>
-      <div id="statusBadge" class="status-badge">
-        <span class="status-dot"></span>
-        <span id="statusText">Verbindung wird hergestellt...</span>
+      <h1>ORDERBOOK TRACKER</h1>
+      <p class="subtitle">Multi-Exchange Orderbook Data • Lighter + Paradex • Automatisches Tracking ALLER Markets</p>
+
+      <div class="connections">
+        <div id="lighterBadge" class="connection-badge">
+          <span class="status-dot"></span>
+          <span>Lighter: <span id="lighterStatus">Connecting...</span></span>
+        </div>
+        <div id="paradexBadge" class="connection-badge">
+          <span class="status-dot"></span>
+          <span>Paradex: <span id="paradexStatus">Connecting...</span></span>
+        </div>
       </div>
     </header>
 
     <div class="info-box">
-      <strong>💡 Wie funktioniert das persistente Monitoring?</strong>
-      Sobald du einen Monitor aktivierst, läuft die Überwachung permanent auf dem Server - auch wenn du die Website schließt! Kommst du zurück, siehst du alle Preis-Alarme in der Historie-Tabelle. Perfect für Langzeit-Monitoring! 
+      <strong>🚀 Automatisches Tracking</strong>
+      Dieser Tracker überwacht automatisch ALLE verfügbaren Markets von Lighter und Paradex. Keine Konfiguration notwendig - alle Orderbook-Daten und Paradex-Trades (inkl. RPI) werden persistent gespeichert!
     </div>
 
-    <div class="stats">
+    <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-label">Aktive Monitore</div>
-        <div class="stat-value" id="statMonitors">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Gesamt-Alarme</div>
-        <div class="stat-value" id="statAlerts">0</div>
+        <div class="stat-label">Lighter Markets</div>
+        <div class="stat-value" id="statLighterMarkets">-</div>
+        <div class="stat-sub" id="statLighterEntries">- Einträge</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Monitoring-Status</div>
-        <div class="stat-value" id="statStatus" style="font-size: 16px; color: var(--text-secondary);">OFFLINE</div>
+        <div class="stat-label">Paradex Markets</div>
+        <div class="stat-value" id="statParadexMarkets">-</div>
+        <div class="stat-sub" id="statParadexEntries">- Einträge</div>
       </div>
-    </div>
-
-    <div class="main-grid">
-      <div class="card">
-        <h2 class="card-title">
-          <span>➕</span>
-          Monitor hinzufügen
-        </h2>
-        <form id="monitorForm">
-          <div class="form-group">
-            <label>Market (Symbol oder ID)</label>
-            <input
-              type="text"
-              id="tokenId"
-              list="tokenList"
-              placeholder="Wähle einen Market oder gib Market ID ein (z.B. 0 für ETH)"
-              required
-            />
-            <datalist id="tokenList">
-              <!-- Wird dynamisch geladen von Lighter API -->
-            </datalist>
-          </div>
-
-          <div class="form-group">
-            <label>Schwellwert (Preis)</label>
-            <input
-              type="number"
-              step="any"
-              id="threshold"
-              placeholder="z.B. 3500.00"
-              required
-            />
-          </div>
-
-          <div class="form-group">
-            <label>Alarm bei</label>
-            <div class="radio-group">
-              <div class="radio-option">
-                <input
-                  type="radio"
-                  id="below"
-                  name="type"
-                  value="below"
-                  checked
-                />
-                <label for="below" class="radio-label">
-                  ↓ Unter Schwellwert
-                </label>
-              </div>
-              <div class="radio-option">
-                <input
-                  type="radio"
-                  id="above"
-                  name="type"
-                  value="above"
-                />
-                <label for="above" class="radio-label">
-                  ↑ Über Schwellwert
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <button type="submit" class="btn" id="addBtn">
-            Monitor aktivieren
-          </button>
-        </form>
+      <div class="stat-card">
+        <div class="stat-label">Paradex RPI Trades</div>
+        <div class="stat-value" id="statRPITrades">-</div>
+        <div class="stat-sub" id="statTotalTrades">- Trades gesamt</div>
       </div>
-
-      <div class="card">
-        <h2 class="card-title">
-          <span>📊</span>
-          Aktive Monitore
-          <span id="monitorCount" style="margin-left: auto; font-size: 18px; color: var(--text-secondary);">(0)</span>
-        </h2>
-        
-        <div id="monitorsTable"></div>
+      <div class="stat-card">
+        <div class="stat-label">Unique Symbols</div>
+        <div class="stat-value" id="statUniqueSymbols">-</div>
+        <div class="stat-sub">Normalisierte Token</div>
       </div>
     </div>
 
     <div class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-        <h2 class="card-title" style="margin: 0;">
-          <span>🔔</span>
-          Preis-Alarm Historie
-          <span id="alertCount" style="margin-left: 12px; font-size: 18px; color: var(--text-secondary);">(0)</span>
-        </h2>
-        <button class="btn btn-secondary" onclick="clearAllAlerts()">
-          Alle löschen
-        </button>
-      </div>
+      <h2 class="card-title">
+        <span>📊</span>
+        Tracked Markets
+      </h2>
 
-      <div id="alertsTable"></div>
+      <div id="marketsTable">
+        <div class="empty-state">
+          <div class="empty-icon">⏳</div>
+          <p>Loading markets...</p>
+        </div>
+      </div>
     </div>
 
-    <div class="main-grid">
-      <div class="card">
-        <h2 class="card-title">
-          <span>📚</span>
-          Orderbook Tracking
-        </h2>
-        <div class="info-box" style="margin-bottom: 20px;">
-          <strong>ℹ️ Orderbook Tracking</strong>
-          Speichert kontinuierlich alle Orderbook-Updates (Asks & Bids) für einen Market. Läuft unabhängig von Preis-Alarmen.
-        </div>
-        <form id="orderbookForm">
-          <div class="form-group">
-            <label>Market auswählen</label>
-            <input
-              type="text"
-              id="orderbookMarketId"
-              list="orderbookTokenList"
-              placeholder="Wähle einen Market oder gib Market ID ein (z.B. 0 für ETH)"
-              required
-            />
-            <datalist id="orderbookTokenList">
-              <!-- Wird dynamisch geladen von Lighter API -->
-            </datalist>
-          </div>
+    <div class="card">
+      <h2 class="card-title">
+        <span>💹</span>
+        API Endpoints
+      </h2>
 
-          <button type="submit" class="btn" id="addOrderbookBtn">
-            Tracking starten
-          </button>
-        </form>
-      </div>
+      <div style="font-size: 14px; line-height: 1.8;">
+        <p style="margin-bottom: 16px;"><strong>Orderbook Daten abrufen:</strong></p>
+        <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;">
+          GET /api/orderbook/{market_or_symbol}?source=lighter|paradex&timeframe=1m|5m|15m|30m|1h&side=ask|bid&limit=100
+        </code>
 
-      <div class="card">
-        <h2 class="card-title">
-          <span>📊</span>
-          Aktive Orderbook Tracker
-          <span id="orderbookTrackerCount" style="margin-left: auto; font-size: 18px; color: var(--text-secondary);">(0)</span>
-        </h2>
+        <p style="margin: 24px 0 16px;"><strong>Paradex Trades abrufen:</strong></p>
+        <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;">
+          GET /api/trades/{market_or_symbol}?type=RPI|FILL&timeframe=1m|5m|15m|30m|1h&limit=100
+        </code>
 
-        <div id="orderbookTrackersTable"></div>
+        <p style="margin: 24px 0 16px;"><strong>Alle verfügbaren Markets:</strong></p>
+        <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;">
+          GET /api/markets
+        </code>
       </div>
     </div>
   </div>
 
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  
   <script>
-    // WebSocket-URL (nach Deployment anpassen!)
     const WS_URL = 'wss://lighter-price-monitor-v2.cloudflareone-demo-account.workers.dev/ws';
     // Für lokale Entwicklung: 'ws://localhost:8787/ws'
 
-    const LIGHTER_API = 'https://mainnet.zklighter.elliot.ai/api/v1';
-
     let ws = null;
-    let monitors = [];
-    let alerts = [];
-    let orderbookTrackers = [];  // Separate orderbook trackers
     let reconnectTimer = null;
-    let markets = [];  // Lighter markets
+    let markets = [];
 
     // Initialisierung
-    document.addEventListener('DOMContentLoaded', async () => {
+    document.addEventListener('DOMContentLoaded', () => {
       connectWebSocket();
-      await loadMarkets();  // Lade Symbole von Lighter
+      loadMarkets();
 
-      document.getElementById('monitorForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        addMonitor();
-      });
-
-      document.getElementById('orderbookForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        addOrderbookTracker();
-      });
-    });
-
-    // Lade verfügbare Markets von Lighter API
-    async function loadMarkets() {
-      try {
-        const response = await fetch(`${LIGHTER_API}/orderBooks`);
-        const data = await response.json();
-
-        if (data.code === 200 && data.order_books) {
-          markets = data.order_books
-            .filter(m => m.status === 'active')
-            .sort((a, b) => a.market_id - b.market_id);
-
-          const marketOptions = markets.map(m =>
-            `<option value="${m.market_id}">${m.symbol} (ID: ${m.market_id})</option>`
-          ).join('');
-
-          // Update both dropdowns
-          document.getElementById('tokenList').innerHTML = marketOptions;
-          document.getElementById('orderbookTokenList').innerHTML = marketOptions;
-
-          console.log(`Loaded ${markets.length} markets from Lighter`);
+      // Refresh stats alle 10 Sekunden
+      setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'get_stats' }));
         }
-      } catch (error) {
-        console.error('Failed to load markets:', error);
-      }
-    }
+      }, 10000);
+    });
 
     function connectWebSocket() {
       try {
@@ -739,11 +467,10 @@
 
         ws.onopen = () => {
           console.log('WebSocket connected');
-          updateStatus('connected', 'Verbunden');
-          
-          // Lade aktuellen Status
-          ws.send(JSON.stringify({ type: 'get_state' }));
-          ws.send(JSON.stringify({ type: 'get_alerts', limit: 100 }));
+
+          // Request initial stats
+          ws.send(JSON.stringify({ type: 'get_stats' }));
+          ws.send(JSON.stringify({ type: 'get_markets' }));
         };
 
         ws.onmessage = (event) => {
@@ -753,8 +480,8 @@
 
         ws.onclose = () => {
           console.log('WebSocket disconnected');
-          updateStatus('disconnected', 'Verbindung unterbrochen');
-          
+          updateConnectionStatus(false, false);
+
           // Auto-Reconnect
           if (reconnectTimer) clearTimeout(reconnectTimer);
           reconnectTimer = setTimeout(connectWebSocket, 5000);
@@ -765,403 +492,146 @@
         };
       } catch (error) {
         console.error('Failed to connect:', error);
-        updateStatus('error', 'Verbindungsfehler');
       }
     }
 
     function handleMessage(message) {
       switch (message.type) {
-        case 'current_state':
-          monitors = message.data.monitors || [];
-          orderbookTrackers = message.data.orderbookTrackers || [];
-          updateMonitorsTable();
-          updateOrderbookTrackersTable();
-          updateStats();
-          if (message.data.connected) {
-            updateStatus('monitoring', 'Monitoring aktiv');
-          }
+        case 'stats':
+          updateStats(message.data);
           break;
 
-        case 'monitor_added':
-          monitors.push(message.data);
-          updateMonitorsTable();
-          updateStats();
-          break;
-
-        case 'monitor_removed':
-          monitors = monitors.filter(m => m.tokenId !== message.data.tokenId);
-          alerts = alerts.filter(a => a.token_id !== message.data.tokenId);
-          updateMonitorsTable();
-          updateAlertsTable();
-          updateStats();
-          break;
-
-        case 'price_update':
-          const monitor = monitors.find(m => m.tokenId === message.data.tokenId);
-          if (monitor) {
-            monitor.lastPrice = message.data.currentPrice;
-            monitor.lastUpdate = message.data.lastUpdate;
-            updateMonitorsTable();
-          }
-          break;
-
-        case 'price_alert':
-          // Neuer Alert!
-          const alertData = {
-            id: message.data.id,
-            token_id: message.data.tokenId,
-            current_price: message.data.currentPrice,
-            threshold: message.data.threshold,
-            type: message.data.type,
-            timestamp: message.data.timestamp,
-            triggered: 1
-          };
-          alerts.unshift(alertData);
-          updateAlertsTable();
-          updateStats();
-
-          // Zeige Browser-Notification (optional)
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification(`Preis-Alarm: ${alertData.token_id}`, {
-              body: `Preis ${alertData.type === 'above' ? 'über' : 'unter'} ${formatPrice(alertData.threshold)}`,
-              icon: '/favicon.ico'
-            });
-          }
-          break;
-
-        case 'alert_history':
-          alerts = message.data || [];
-          updateAlertsTable();
-          updateStats();
-          break;
-
-        case 'alerts_cleared':
-          if (message.data.tokenId) {
-            alerts = alerts.filter(a => a.token_id !== message.data.tokenId);
-          } else {
-            alerts = [];
-          }
-          updateAlertsTable();
-          updateStats();
-          break;
-
-        case 'orderbook_tracker_added':
-          orderbookTrackers.push(message.data);
-          updateOrderbookTrackersTable();
-          break;
-
-        case 'orderbook_tracker_removed':
-          orderbookTrackers = orderbookTrackers.filter(t => t.marketId !== message.data.marketId);
-          updateOrderbookTrackersTable();
-          break;
-
-        case 'orderbook_stats_update':
-          const tracker = orderbookTrackers.find(t => t.marketId === message.data.marketId);
-          if (tracker) {
-            tracker.entryCount = message.data.entryCount;
-            tracker.asksCount = message.data.asksCount;
-            tracker.bidsCount = message.data.bidsCount;
-            tracker.lastUpdate = message.data.lastUpdate;
-            updateOrderbookTrackersTable();
-          }
+        case 'markets':
+          markets = message.data;
           break;
       }
     }
 
-    function addMonitor() {
-      const tokenId = document.getElementById('tokenId').value.trim();
-      const threshold = parseFloat(document.getElementById('threshold').value);
-      const type = document.querySelector('input[name="type"]:checked').value;
+    function updateStats(data) {
+      // Connection status
+      updateConnectionStatus(data.lighter_connected, data.paradex_connected);
 
-      if (!tokenId || !threshold || !ws) return;
+      // Markets count
+      document.getElementById('statLighterMarkets').textContent = data.lighter_markets || 0;
+      document.getElementById('statParadexMarkets').textContent = data.paradex_markets || 0;
 
-      ws.send(JSON.stringify({
-        type: 'add_monitor',
-        tokenId: tokenId,
-        threshold: threshold,
-        monitorType: type
-      }));
+      // Orderbook stats
+      const lighterStats = data.orderbook.find(s => s.source === 'lighter');
+      const paradexStats = data.orderbook.find(s => s.source === 'paradex');
 
-      // Reset Form
-      document.getElementById('tokenId').value = '';
-      document.getElementById('threshold').value = '';
+      document.getElementById('statLighterEntries').textContent =
+        (lighterStats?.total_entries || 0).toLocaleString('de-DE') + ' Einträge';
+      document.getElementById('statParadexEntries').textContent =
+        (paradexStats?.total_entries || 0).toLocaleString('de-DE') + ' Einträge';
+
+      // Trades stats
+      document.getElementById('statRPITrades').textContent =
+        (data.trades?.rpi_trades || 0).toLocaleString('de-DE');
+      document.getElementById('statTotalTrades').textContent =
+        (data.trades?.total_trades || 0).toLocaleString('de-DE') + ' Trades gesamt';
+
+      // Unique symbols
+      const uniqueSymbols = new Set([
+        ...((lighterStats?.unique_symbols || 0) > 0 ? [lighterStats.unique_symbols] : []),
+        ...((paradexStats?.unique_symbols || 0) > 0 ? [paradexStats.unique_symbols] : [])
+      ]);
+
+      document.getElementById('statUniqueSymbols').textContent =
+        Math.max(lighterStats?.unique_symbols || 0, paradexStats?.unique_symbols || 0);
     }
 
-    function removeMonitor(tokenId) {
-      if (!ws || !confirm(`Monitor für ${tokenId} wirklich entfernen?`)) return;
-      
-      ws.send(JSON.stringify({
-        type: 'remove_monitor',
-        tokenId: tokenId
-      }));
-    }
+    function updateConnectionStatus(lighterConnected, paradexConnected) {
+      const lighterBadge = document.getElementById('lighterBadge');
+      const lighterStatus = document.getElementById('lighterStatus');
+      const paradexBadge = document.getElementById('paradexBadge');
+      const paradexStatus = document.getElementById('paradexStatus');
 
-    function clearAllAlerts() {
-      if (!ws || !confirm('Alle Alarme wirklich löschen?')) return;
-
-      ws.send(JSON.stringify({
-        type: 'clear_alerts'
-      }));
-    }
-
-    function addOrderbookTracker() {
-      const marketId = document.getElementById('orderbookMarketId').value.trim();
-
-      if (!marketId || !ws) return;
-
-      ws.send(JSON.stringify({
-        type: 'add_orderbook_tracker',
-        marketId: marketId
-      }));
-
-      // Reset Form
-      document.getElementById('orderbookMarketId').value = '';
-    }
-
-    function removeOrderbookTracker(marketId) {
-      if (!ws || !confirm(`Orderbook Tracking für Market ${marketId} wirklich beenden?`)) return;
-
-      ws.send(JSON.stringify({
-        type: 'remove_orderbook_tracker',
-        marketId: marketId
-      }));
-    }
-
-    function getMarketSymbol(marketId) {
-      const market = markets.find(m => m.market_id === marketId || m.market_id === parseInt(marketId));
-      return market ? market.symbol : `Market ${marketId}`;
-    }
-
-    function formatDataSize(entryCount) {
-      // Rough estimate: each entry ~150 bytes
-      const bytes = entryCount * 150;
-      if (bytes < 1024) return `${bytes} B`;
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-    }
-
-    function updateOrderbookTrackersTable() {
-      const container = document.getElementById('orderbookTrackersTable');
-      document.getElementById('orderbookTrackerCount').textContent = `(${orderbookTrackers.length})`;
-
-      if (orderbookTrackers.length === 0) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">📚</div>
-            <p>Keine aktiven Orderbook Tracker</p>
-            <p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">
-              Starte das Tracking für einen Market, um Orderbook-Daten zu sammeln
-            </p>
-          </div>
-        `;
-        return;
+      if (lighterConnected) {
+        lighterBadge.classList.add('connected');
+        lighterStatus.textContent = 'Connected';
+      } else {
+        lighterBadge.classList.remove('connected');
+        lighterStatus.textContent = 'Disconnected';
       }
 
-      const html = `
-        <table>
-          <thead>
-            <tr>
-              <th>Market</th>
-              <th>Symbol</th>
-              <th>Einträge gesamt</th>
-              <th>Asks</th>
-              <th>Bids</th>
-              <th>Datengröße</th>
-              <th>Letzte Aktualisierung</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${orderbookTrackers.map(t => `
-              <tr>
-                <td><span class="token-id">${t.marketId}</span></td>
-                <td>${getMarketSymbol(t.marketId)}</td>
-                <td class="price">${(t.entryCount || 0).toLocaleString('de-DE')}</td>
-                <td class="price" style="color: var(--accent-red);">${(t.asksCount || 0).toLocaleString('de-DE')}</td>
-                <td class="price" style="color: var(--accent-green);">${(t.bidsCount || 0).toLocaleString('de-DE')}</td>
-                <td class="price">${formatDataSize(t.entryCount || 0)}</td>
-                <td class="timestamp">${formatTime(t.lastUpdate)}</td>
-                <td>
-                  <button class="btn-secondary" onclick="removeOrderbookTracker('${t.marketId}')">
-                    Stoppen
-                  </button>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `;
-      container.innerHTML = html;
+      if (paradexConnected) {
+        paradexBadge.classList.add('connected');
+        paradexStatus.textContent = 'Connected';
+      } else {
+        paradexBadge.classList.remove('connected');
+        paradexStatus.textContent = 'Disconnected';
+      }
     }
 
-    function updateMonitorsTable() {
-      const container = document.getElementById('monitorsTable');
-      document.getElementById('monitorCount').textContent = `(${monitors.length})`;
+    async function loadMarkets() {
+      try {
+        const response = await fetch('https://lighter-price-monitor-v2.cloudflareone-demo-account.workers.dev/api/markets');
+        const data = await response.json();
 
-      if (monitors.length === 0) {
+        updateMarketsTable(data.markets || []);
+      } catch (error) {
+        console.error('Failed to load markets:', error);
+      }
+    }
+
+    function updateMarketsTable(marketList) {
+      const container = document.getElementById('marketsTable');
+
+      if (marketList.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
             <div class="empty-icon">📭</div>
-            <p>Keine aktiven Monitore</p>
-            <p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">
-              Füge einen Monitor hinzu, um zu starten
-            </p>
+            <p>Keine Markets gefunden</p>
           </div>
         `;
         return;
+      }
+
+      // Group by normalized symbol
+      const grouped = {};
+      for (const market of marketList) {
+        if (!grouped[market.normalized_symbol]) {
+          grouped[market.normalized_symbol] = [];
+        }
+        grouped[market.normalized_symbol].push(market);
       }
 
       const html = `
         <table>
           <thead>
             <tr>
-              <th>Token</th>
-              <th>Schwellwert</th>
-              <th>Aktueller Preis</th>
-              <th>Typ</th>
-              <th>Letzte Aktualisierung</th>
-              <th></th>
+              <th>Symbol</th>
+              <th>Base Asset</th>
+              <th>Quote Asset</th>
+              <th>Type</th>
+              <th>Sources</th>
+              <th>Market IDs</th>
             </tr>
           </thead>
           <tbody>
-            ${monitors.map(m => `
-              <tr>
-                <td><span class="token-id">${m.tokenId}</span></td>
-                <td class="price">${formatPrice(m.threshold)}</td>
-                <td class="price">
-                  ${m.lastPrice ? formatPrice(m.lastPrice) : '<span class="loading"></span>'}
-                </td>
-                <td>
-                  <span class="badge badge-${m.type}">
-                    ${m.type === 'above' ? '↑ Über' : '↓ Unter'}
-                  </span>
-                </td>
-                <td class="timestamp">${formatTime(m.lastUpdate)}</td>
-                <td>
-                  <button class="btn-secondary" onclick="removeMonitor('${m.tokenId}')">
-                    Entfernen
-                  </button>
-                </td>
-              </tr>
-            `).join('')}
+            ${Object.keys(grouped).sort().map(symbol => {
+              const markets = grouped[symbol];
+              const sources = markets.map(m => m.source);
+              const marketIds = markets.map(m => `${m.source}:${m.original_symbol}`).join(', ');
+
+              return `
+                <tr>
+                  <td><strong>${symbol}</strong></td>
+                  <td>${markets[0].base_asset}</td>
+                  <td>${markets[0].quote_asset}</td>
+                  <td>${markets[0].market_type}</td>
+                  <td>
+                    ${sources.includes('lighter') ? '<span class="badge badge-lighter">Lighter</span> ' : ''}
+                    ${sources.includes('paradex') ? '<span class="badge badge-paradex">Paradex</span>' : ''}
+                  </td>
+                  <td style="font-size: 11px; color: var(--text-secondary);">${marketIds}</td>
+                </tr>
+              `;
+            }).join('')}
           </tbody>
         </table>
       `;
       container.innerHTML = html;
-    }
-
-    function updateAlertsTable() {
-      const container = document.getElementById('alertsTable');
-      document.getElementById('alertCount').textContent = `(${alerts.length})`;
-
-      if (alerts.length === 0) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">✅</div>
-            <p>Noch keine Preis-Alarme</p>
-            <p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">
-              Wenn ein Schwellwert erreicht wird, erscheint hier der Alert
-            </p>
-          </div>
-        `;
-        return;
-      }
-
-      const html = `
-        <table>
-          <thead>
-            <tr>
-              <th>Zeitstempel</th>
-              <th>Token</th>
-              <th>Preis</th>
-              <th>Schwellwert</th>
-              <th>Typ</th>
-              <th>Differenz</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${alerts.map((a, idx) => `
-              <tr class="${idx === 0 ? 'new-alert' : ''}">
-                <td class="timestamp">${formatFullTime(a.timestamp)}</td>
-                <td><span class="token-id">${a.token_id}</span></td>
-                <td class="price">${formatPrice(a.current_price)}</td>
-                <td class="price">${formatPrice(a.threshold)}</td>
-                <td>
-                  <span class="badge badge-${a.type}">
-                    ${a.type === 'above' ? '↑ Überschritten' : '↓ Unterschritten'}
-                  </span>
-                </td>
-                <td class="price">
-                  ${formatPriceDiff(a.current_price, a.threshold)}
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `;
-      container.innerHTML = html;
-    }
-
-    function updateStats() {
-      document.getElementById('statMonitors').textContent = monitors.length;
-      document.getElementById('statAlerts').textContent = alerts.length;
-      document.getElementById('statStatus').textContent = 
-        monitors.length > 0 ? 'AKTIV' : 'BEREIT';
-      document.getElementById('statStatus').style.color = 
-        monitors.length > 0 ? 'var(--accent-green)' : 'var(--text-secondary)';
-    }
-
-    function updateStatus(status, text) {
-      const badge = document.getElementById('statusBadge');
-      const statusText = document.getElementById('statusText');
-      
-      badge.className = 'status-badge';
-      if (status === 'connected' || status === 'monitoring') {
-        badge.classList.add(status);
-      }
-      
-      statusText.textContent = text;
-      
-      document.getElementById('addBtn').disabled = status === 'disconnected';
-    }
-
-    function formatPrice(price) {
-      if (price === null || price === undefined) return '-';
-      return new Intl.NumberFormat('de-DE', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 8
-      }).format(price);
-    }
-
-    function formatPriceDiff(current, threshold) {
-      const diff = current - threshold;
-      const sign = diff > 0 ? '+' : '';
-      return `${sign}${formatPrice(Math.abs(diff))}`;
-    }
-
-    function formatTime(timestamp) {
-      if (!timestamp) return '-';
-      return new Date(timestamp).toLocaleTimeString('de-DE');
-    }
-
-    function formatFullTime(timestamp) {
-      if (!timestamp) return '-';
-      const date = new Date(timestamp);
-      return date.toLocaleString('de-DE', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-    }
-
-    // Notification-Permission anfragen (optional)
-    if ('Notification' in window && Notification.permission === 'default') {
-      setTimeout(() => {
-        Notification.requestPermission();
-      }, 3000);
     }
   </script>
 </body>

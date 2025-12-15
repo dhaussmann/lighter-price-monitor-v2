@@ -1,59 +1,483 @@
 /**
- * Lighter Price Monitor v2 - Persistent Background Monitoring
- * Mit D1 Database für Alert-Historie und dauerhafte Überwachung
+ * Multi-Exchange Orderbook Tracker
+ * Tracks orderbook data from Lighter and Paradex
  */
 
 export interface Env {
-  PRICE_MONITOR: DurableObjectNamespace;
+  ORDERBOOK_TRACKER: DurableObjectNamespace;
   DB: D1Database;
 }
 
-// Durable Object für persistente Überwachung
-export class PriceMonitor {
+// Durable Object für persistentes Orderbook-Tracking
+export class OrderbookTracker {
   private state: DurableObjectState;
   private env: Env;
   private sessions: Set<WebSocket>;
-  private monitoredTokens: Map<string, TokenMonitor>;
-  private orderbookTrackers: Map<string, OrderbookTracker>;  // NEU: Separate Orderbook-Tracker
+
+  // Exchange WebSocket connections
   private lighterWs: WebSocket | null = null;
-  private reconnectTimeout: any = null;
-  private pingInterval: any = null;
+  private paradexWs: WebSocket | null = null;
+
+  // Ping intervals for keepalive
+  private lighterPingInterval: any = null;
+  private paradexPingInterval: any = null;
+
+  // Reconnect timeouts
+  private lighterReconnectTimeout: any = null;
+  private paradexReconnectTimeout: any = null;
+
+  // Token mappings cache
+  private tokenMappings: Map<string, TokenMapping> = new Map();
+
+  // Tracked markets
+  private lighterMarkets: Set<string> = new Set();
+  private paradexMarkets: Set<string> = new Set();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     this.sessions = new Set();
-    this.monitoredTokens = new Map();
-    this.orderbookTrackers = new Map();
 
-    // Lade gespeicherte Monitore und Tracker beim Start
-    this.loadMonitorsFromStorage();
-    this.loadOrderbookTrackersFromStorage();
+    // Auto-start tracking on initialization
+    this.initialize();
   }
 
-  async loadMonitorsFromStorage() {
-    const stored = await this.state.storage.list<TokenMonitor>({ prefix: 'monitor:' });
-    for (const [key, monitor] of stored) {
-      this.monitoredTokens.set(monitor.tokenId, monitor);
-    }
+  async initialize() {
+    // Load token mappings from database
+    await this.loadTokenMappings();
 
-    // Starte Lighter-Verbindung wenn Monitore existieren
-    if (this.monitoredTokens.size > 0 && !this.lighterWs) {
-      await this.connectToLighter();
+    // Discover and track ALL available markets
+    await this.discoverAndTrackMarkets();
+
+    // Connect to exchanges
+    await this.connectToLighter();
+    await this.connectToParadex();
+  }
+
+  async loadTokenMappings() {
+    try {
+      const result = await this.env.DB.prepare(
+        `SELECT * FROM token_mapping WHERE active = 1`
+      ).all();
+
+      for (const row of result.results || []) {
+        const key = `${row.source}:${row.original_symbol}`;
+        this.tokenMappings.set(key, row as TokenMapping);
+      }
+
+      console.log(`Loaded ${this.tokenMappings.size} token mappings`);
+    } catch (error) {
+      console.error('Error loading token mappings:', error);
     }
   }
 
-  async loadOrderbookTrackersFromStorage() {
-    const stored = await this.state.storage.list<OrderbookTracker>({ prefix: 'orderbook:' });
-    for (const [key, tracker] of stored) {
-      this.orderbookTrackers.set(tracker.marketId, tracker);
-    }
+  async discoverAndTrackMarkets() {
+    try {
+      // Discover Lighter markets
+      const lighterResponse = await fetch('https://mainnet.zklighter.elliot.ai/api/v1/orderBooks');
+      const lighterData = await lighterResponse.json();
 
-    // Starte Lighter-Verbindung wenn Tracker existieren
-    if (this.orderbookTrackers.size > 0 && !this.lighterWs) {
-      await this.connectToLighter();
+      if (lighterData.code === 200 && lighterData.order_books) {
+        for (const market of lighterData.order_books) {
+          if (market.status === 'active') {
+            this.lighterMarkets.add(market.market_id);
+
+            // Add to token mapping if not exists
+            await this.ensureTokenMapping('lighter', market.market_id, market.symbol);
+          }
+        }
+        console.log(`Discovered ${this.lighterMarkets.size} Lighter markets`);
+      }
+
+      // Discover Paradex markets
+      const paradexResponse = await fetch('https://api.prod.paradex.trade/v1/markets');
+      const paradexData = await paradexResponse.json();
+
+      if (paradexData.results) {
+        for (const market of paradexData.results) {
+          this.paradexMarkets.add(market.symbol);
+
+          // Extract normalized symbol (e.g., ETH-USD-PERP -> ETH)
+          const baseAsset = market.symbol.split('-')[0];
+          await this.ensureTokenMapping('paradex', market.symbol, baseAsset);
+        }
+        console.log(`Discovered ${this.paradexMarkets.size} Paradex markets`);
+      }
+    } catch (error) {
+      console.error('Error discovering markets:', error);
     }
   }
+
+  async ensureTokenMapping(source: string, originalSymbol: string, normalizedSymbol: string) {
+    const key = `${source}:${originalSymbol}`;
+
+    if (!this.tokenMappings.has(key)) {
+      try {
+        // Parse base/quote/type from symbol
+        let baseAsset = normalizedSymbol;
+        let quoteAsset = 'USD';
+        let marketType = 'PERP';
+
+        if (source === 'paradex' && originalSymbol.includes('-')) {
+          const parts = originalSymbol.split('-');
+          baseAsset = parts[0];
+          quoteAsset = parts[1];
+          marketType = parts[2] || 'PERP';
+        }
+
+        await this.env.DB.prepare(
+          `INSERT OR IGNORE INTO token_mapping
+           (source, original_symbol, normalized_symbol, base_asset, quote_asset, market_type, active)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`
+        ).bind(source, originalSymbol, baseAsset, baseAsset, quoteAsset, marketType).run();
+
+        this.tokenMappings.set(key, {
+          source,
+          original_symbol: originalSymbol,
+          normalized_symbol: baseAsset,
+          base_asset: baseAsset,
+          quote_asset: quoteAsset,
+          market_type: marketType,
+          active: 1
+        });
+      } catch (error) {
+        console.error('Error creating token mapping:', error);
+      }
+    }
+  }
+
+  getNormalizedSymbol(source: string, originalSymbol: string): string {
+    const key = `${source}:${originalSymbol}`;
+    const mapping = this.tokenMappings.get(key);
+    return mapping?.normalized_symbol || originalSymbol;
+  }
+
+  // ========== Lighter WebSocket ==========
+
+  async connectToLighter() {
+    try {
+      const ws = new WebSocket('wss://mainnet.zklighter.elliot.ai/stream');
+
+      ws.addEventListener('open', () => {
+        console.log('✅ Connected to Lighter WebSocket');
+
+        // Subscribe to ALL markets
+        for (const marketId of this.lighterMarkets) {
+          this.subscribeLighterOrderbook(marketId);
+        }
+
+        // Start keepalive ping
+        this.startLighterPing();
+      });
+
+      ws.addEventListener('message', (event) => {
+        this.handleLighterMessage(event.data);
+      });
+
+      ws.addEventListener('close', () => {
+        console.log('❌ Disconnected from Lighter');
+        this.lighterWs = null;
+        this.stopLighterPing();
+
+        // Auto-reconnect
+        this.lighterReconnectTimeout = setTimeout(() => {
+          this.connectToLighter();
+        }, 5000);
+      });
+
+      ws.addEventListener('error', (error: any) => {
+        console.error('Lighter WebSocket error:', error);
+      });
+
+      this.lighterWs = ws;
+    } catch (error) {
+      console.error('Failed to connect to Lighter:', error);
+    }
+  }
+
+  subscribeLighterOrderbook(marketId: string) {
+    if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
+      this.lighterWs.send(JSON.stringify({
+        type: 'subscribe',
+        channel: `order_book/${marketId}`
+      }));
+      console.log(`📚 Subscribed to Lighter order_book/${marketId}`);
+    }
+  }
+
+  startLighterPing() {
+    this.stopLighterPing();
+    this.lighterPingInterval = setInterval(() => {
+      if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
+        this.lighterWs.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 30000);
+  }
+
+  stopLighterPing() {
+    if (this.lighterPingInterval) {
+      clearInterval(this.lighterPingInterval);
+      this.lighterPingInterval = null;
+    }
+  }
+
+  async handleLighterMessage(data: string) {
+    try {
+      const message = JSON.parse(data);
+
+      // Orderbook Updates
+      if (message.channel && message.channel.startsWith('order_book:')) {
+        const marketId = message.channel.replace('order_book:', '');
+        await this.saveLighterOrderbookUpdate(marketId, message);
+      }
+    } catch (error) {
+      console.error('Error parsing Lighter message:', error);
+    }
+  }
+
+  async saveLighterOrderbookUpdate(marketId: string, message: any) {
+    try {
+      const { order_book, timestamp } = message;
+      if (!order_book) return;
+
+      const { asks, bids, offset, nonce } = order_book;
+      const normalizedSymbol = this.getNormalizedSymbol('lighter', marketId);
+
+      // Save asks
+      if (asks && Array.isArray(asks)) {
+        for (const ask of asks) {
+          await this.env.DB.prepare(
+            `INSERT INTO orderbook_entries
+             (source, market_id, normalized_symbol, side, price, size, timestamp, offset, nonce)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).bind(
+            'lighter',
+            marketId,
+            normalizedSymbol,
+            'ask',
+            parseFloat(ask.price),
+            parseFloat(ask.size),
+            timestamp,
+            offset,
+            nonce
+          ).run();
+        }
+      }
+
+      // Save bids
+      if (bids && Array.isArray(bids)) {
+        for (const bid of bids) {
+          await this.env.DB.prepare(
+            `INSERT INTO orderbook_entries
+             (source, market_id, normalized_symbol, side, price, size, timestamp, offset, nonce)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).bind(
+            'lighter',
+            marketId,
+            normalizedSymbol,
+            'bid',
+            parseFloat(bid.price),
+            parseFloat(bid.size),
+            timestamp,
+            offset,
+            nonce
+          ).run();
+        }
+      }
+
+      const totalSaved = (asks?.length || 0) + (bids?.length || 0);
+      if (totalSaved > 0) {
+        console.log(`📚 Lighter: Saved ${totalSaved} entries for ${normalizedSymbol} (${marketId})`);
+      }
+    } catch (error) {
+      console.error('Error saving Lighter orderbook:', error);
+    }
+  }
+
+  // ========== Paradex WebSocket ==========
+
+  async connectToParadex() {
+    try {
+      const ws = new WebSocket('wss://ws.api.prod.paradex.trade/v1');
+
+      ws.addEventListener('open', () => {
+        console.log('✅ Connected to Paradex WebSocket');
+
+        // Subscribe to ALL orderbooks
+        for (const market of this.paradexMarkets) {
+          this.subscribeParadexOrderbook(market);
+        }
+
+        // Subscribe to ALL trades (for RPI data)
+        this.subscribeParadexTrades();
+
+        // Start keepalive ping
+        this.startParadexPing();
+      });
+
+      ws.addEventListener('message', (event) => {
+        this.handleParadexMessage(event.data);
+      });
+
+      ws.addEventListener('close', () => {
+        console.log('❌ Disconnected from Paradex');
+        this.paradexWs = null;
+        this.stopParadexPing();
+
+        // Auto-reconnect
+        this.paradexReconnectTimeout = setTimeout(() => {
+          this.connectToParadex();
+        }, 5000);
+      });
+
+      ws.addEventListener('error', (error: any) => {
+        console.error('Paradex WebSocket error:', error);
+      });
+
+      this.paradexWs = ws;
+    } catch (error) {
+      console.error('Failed to connect to Paradex:', error);
+    }
+  }
+
+  subscribeParadexOrderbook(market: string) {
+    if (this.paradexWs && this.paradexWs.readyState === WebSocket.OPEN) {
+      const subscribeId = Date.now();
+      this.paradexWs.send(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'subscribe',
+        params: {
+          channel: `order_book.${market}.snapshot@15@50ms`
+        },
+        id: subscribeId
+      }));
+      console.log(`📚 Subscribed to Paradex order_book.${market}`);
+    }
+  }
+
+  subscribeParadexTrades() {
+    if (this.paradexWs && this.paradexWs.readyState === WebSocket.OPEN) {
+      this.paradexWs.send(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'subscribe',
+        params: {
+          channel: 'trades.ALL'
+        },
+        id: Date.now()
+      }));
+      console.log('📊 Subscribed to Paradex trades.ALL');
+    }
+  }
+
+  startParadexPing() {
+    this.stopParadexPing();
+    this.paradexPingInterval = setInterval(() => {
+      if (this.paradexWs && this.paradexWs.readyState === WebSocket.OPEN) {
+        this.paradexWs.send(JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'ping',
+          id: Date.now()
+        }));
+      }
+    }, 30000);
+  }
+
+  stopParadexPing() {
+    if (this.paradexPingInterval) {
+      clearInterval(this.paradexPingInterval);
+      this.paradexPingInterval = null;
+    }
+  }
+
+  async handleParadexMessage(data: string) {
+    try {
+      const message = JSON.parse(data);
+
+      // Subscription confirmations
+      if (message.result === 'ok') {
+        return;
+      }
+
+      // Subscription data
+      if (message.method === 'subscription' && message.params) {
+        const { channel, data: channelData } = message.params;
+
+        // Orderbook updates
+        if (channel && channel.startsWith('order_book.')) {
+          await this.saveParadexOrderbookUpdate(channelData);
+        }
+
+        // Trade updates
+        if (channel === 'trades.ALL') {
+          await this.saveParadexTrade(channelData);
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing Paradex message:', error);
+    }
+  }
+
+  async saveParadexOrderbookUpdate(data: any) {
+    try {
+      const { market, inserts, seq_no, last_updated_at } = data;
+      if (!inserts || !Array.isArray(inserts)) return;
+
+      const normalizedSymbol = this.getNormalizedSymbol('paradex', market);
+
+      for (const entry of inserts) {
+        const side = entry.side === 'BUY' ? 'bid' : 'ask';
+
+        await this.env.DB.prepare(
+          `INSERT INTO orderbook_entries
+           (source, market_id, normalized_symbol, side, price, size, timestamp, seq_no)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+          'paradex',
+          market,
+          normalizedSymbol,
+          side,
+          parseFloat(entry.price),
+          parseFloat(entry.size),
+          last_updated_at,
+          seq_no
+        ).run();
+      }
+
+      console.log(`📚 Paradex: Saved ${inserts.length} entries for ${normalizedSymbol} (${market})`);
+    } catch (error) {
+      console.error('Error saving Paradex orderbook:', error);
+    }
+  }
+
+  async saveParadexTrade(data: any) {
+    try {
+      const { id, market, side, size, price, created_at, trade_type } = data;
+      const normalizedSymbol = this.getNormalizedSymbol('paradex', market);
+
+      await this.env.DB.prepare(
+        `INSERT OR IGNORE INTO paradex_trades
+         (id, market, normalized_symbol, side, size, price, trade_type, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        id,
+        market,
+        normalizedSymbol,
+        side,
+        parseFloat(size),
+        parseFloat(price),
+        trade_type,
+        created_at
+      ).run();
+
+      if (trade_type === 'RPI') {
+        console.log(`💹 RPI Trade: ${normalizedSymbol} ${side} ${size} @ ${price}`);
+      }
+    } catch (error) {
+      console.error('Error saving Paradex trade:', error);
+    }
+  }
+
+  // ========== Client WebSocket Handling ==========
 
   async fetch(request: Request): Promise<Response> {
     const upgradeHeader = request.headers.get('Upgrade');
@@ -76,555 +500,79 @@ export class PriceMonitor {
     websocket.accept();
     this.sessions.add(websocket);
 
-    // Verbindung zu Lighter herstellen, falls noch nicht geschehen
-    if (!this.lighterWs && this.monitoredTokens.size > 0) {
-      await this.connectToLighter();
-    }
-
     websocket.addEventListener('message', async (msg) => {
       try {
         const data = JSON.parse(msg.data as string);
         await this.handleClientMessage(data, websocket);
       } catch (error) {
         console.error('Error handling message:', error);
-        websocket.send(JSON.stringify({
-          type: 'error',
-          message: 'Invalid message format'
-        }));
       }
     });
 
     websocket.addEventListener('close', () => {
       this.sessions.delete(websocket);
-      // WICHTIG: Lighter-Verbindung NICHT schließen!
-      // Monitoring läuft weiter, auch ohne aktive Clients
     });
 
-    // Sende aktuelle Monitore und Alerts an neuen Client
-    await this.sendCurrentState(websocket);
-  }
-
-  async connectToLighter() {
-    try {
-      const ws = new WebSocket('wss://mainnet.zklighter.elliot.ai/stream');
-      
-      ws.addEventListener('open', () => {
-        console.log('Connected to Lighter WebSocket');
-
-        // Abonniere alle überwachten Token (Price Monitoring)
-        for (const [tokenId, monitor] of this.monitoredTokens) {
-          this.subscribeTicker(tokenId);
-        }
-
-        // Abonniere alle Orderbook-Tracker
-        for (const [marketId, tracker] of this.orderbookTrackers) {
-          this.subscribeOrderbook(marketId);
-        }
-
-        // Starte Ping-Interval (alle 30 Sekunden)
-        this.startPingInterval();
-      });
-
-      ws.addEventListener('message', (event) => {
-        this.handleLighterMessage(event.data);
-      });
-
-      ws.addEventListener('close', () => {
-        console.log('Disconnected from Lighter');
-        this.lighterWs = null;
-        
-        // Auto-Reconnect - IMMER, wenn noch Monitore existieren
-        if (this.monitoredTokens.size > 0) {
-          this.reconnectTimeout = setTimeout(() => {
-            this.connectToLighter();
-          }, 5000);
-        }
-      });
-
-      ws.addEventListener('error', (error: any) => {
-        console.error('Lighter WebSocket error:', {
-          message: error?.message,
-          type: error?.type,
-          error: JSON.stringify(error, Object.getOwnPropertyNames(error))
-        });
-      });
-
-      this.lighterWs = ws;
-    } catch (error) {
-      console.error('Failed to connect to Lighter:', error);
-    }
-  }
-
-  disconnectFromLighter() {
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
-    }
-
-    if (this.lighterWs) {
-      this.lighterWs.close();
-      this.lighterWs = null;
-    }
-  }
-
-  startPingInterval() {
-    // Stoppe alten Interval falls vorhanden
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-    }
-
-    // Sende alle 30 Sekunden einen Ping
-    this.pingInterval = setInterval(() => {
-      if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
-        try {
-          this.lighterWs.send(JSON.stringify({ type: 'ping' }));
-          console.log('📡 Sent ping to Lighter WebSocket');
-        } catch (error) {
-          console.error('Error sending ping:', error);
-        }
-      }
-    }, 30000); // 30 Sekunden
-  }
-
-  subscribeTicker(tokenId: string) {
-    if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
-      const subscribeMsg = {
-        type: 'subscribe',
-        channel: `market_stats/${tokenId}`  // Request mit Slash
-      };
-      console.log(`📡 Subscribing to market_stats/${tokenId}`);
-      this.lighterWs.send(JSON.stringify(subscribeMsg));
-    }
-  }
-
-  unsubscribeTicker(tokenId: string) {
-    if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
-      const unsubscribeMsg = {
-        type: 'unsubscribe',
-        channel: `market_stats/${tokenId}`  // Request mit Slash
-      };
-      console.log(`📡 Unsubscribing from market_stats/${tokenId}`);
-      this.lighterWs.send(JSON.stringify(unsubscribeMsg));
-    }
-  }
-
-  subscribeOrderbook(tokenId: string) {
-    if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
-      const subscribeMsg = {
-        type: 'subscribe',
-        channel: `order_book/${tokenId}`
-      };
-      console.log(`📚 Subscribing to order_book/${tokenId}`);
-      this.lighterWs.send(JSON.stringify(subscribeMsg));
-    }
-  }
-
-  unsubscribeOrderbook(tokenId: string) {
-    if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
-      const unsubscribeMsg = {
-        type: 'unsubscribe',
-        channel: `order_book/${tokenId}`
-      };
-      console.log(`📚 Unsubscribing from order_book/${tokenId}`);
-      this.lighterWs.send(JSON.stringify(unsubscribeMsg));
-    }
-  }
-
-  handleLighterMessage(data: string) {
-    try {
-      const message = JSON.parse(data);
-
-      // DEBUG: Logge alle Nachrichten von Lighter
-      console.log('📩 Lighter message:', JSON.stringify(message));
-
-      // Market Stats Updates
-      if (message.channel && message.channel.startsWith('market_stats:')) {
-        const marketId = message.channel.replace('market_stats:', '');
-        const price = parseFloat(message.market_stats?.mark_price || message.market_stats?.index_price);
-
-        console.log(`💰 Price update for market ${marketId} (${message.market_stats?.symbol}):`, price);
-
-        if (price && this.monitoredTokens.has(marketId)) {
-          this.checkPriceThreshold(marketId, price);
-        }
-      }
-
-      // Orderbook Updates
-      if (message.channel && message.channel.startsWith('order_book:')) {
-        const marketId = message.channel.replace('order_book:', '');
-
-        // Prüfe ob Orderbook-Tracker für diesen Market aktiv ist
-        if (this.orderbookTrackers.has(marketId)) {
-          this.saveOrderbookUpdate(marketId, message);
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing Lighter message:', error);
-    }
-  }
-
-  async checkPriceThreshold(tokenId: string, currentPrice: number) {
-    const monitor = this.monitoredTokens.get(tokenId);
-    if (!monitor) return;
-
-    const triggered = 
-      (monitor.type === 'above' && currentPrice > monitor.threshold) ||
-      (monitor.type === 'below' && currentPrice < monitor.threshold);
-
-    // Update Monitor-Preis
-    monitor.lastPrice = currentPrice;
-    monitor.lastUpdate = Date.now();
-    await this.state.storage.put(`monitor:${tokenId}`, monitor);
-
-    // Wenn Schwellwert erreicht: Alert speichern!
-    if (triggered) {
-      const alert: PriceAlert = {
-        id: `${tokenId}_${Date.now()}`,
-        tokenId,
-        currentPrice,
-        threshold: monitor.threshold,
-        type: monitor.type,
-        timestamp: Date.now(),
-        triggered: true
-      };
-
-      // In D1 Database speichern
-      await this.saveAlertToDatabase(alert);
-
-      // Broadcast an alle verbundenen Clients
-      this.broadcast({
-        type: 'price_alert',
-        data: alert
-      });
-    }
-
-    // Sende Preis-Update an Clients (auch wenn nicht triggered)
-    this.broadcast({
-      type: 'price_update',
-      data: {
-        tokenId,
-        currentPrice,
-        lastUpdate: monitor.lastUpdate
-      }
-    });
-  }
-
-  async saveAlertToDatabase(alert: PriceAlert) {
-    try {
-      await this.env.DB.prepare(
-        `INSERT INTO alerts (id, token_id, current_price, threshold, type, timestamp, triggered)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        alert.id,
-        alert.tokenId,
-        alert.currentPrice,
-        alert.threshold,
-        alert.type,
-        alert.timestamp,
-        alert.triggered ? 1 : 0
-      ).run();
-    } catch (error) {
-      console.error('Error saving alert to database:', error);
-    }
-  }
-
-  async saveOrderbookUpdate(marketId: string, message: any) {
-    try {
-      const { order_book, timestamp } = message;
-      if (!order_book) return;
-
-      const { asks, bids, offset, nonce } = order_book;
-      let savedCount = 0;
-
-      // Speichere Asks
-      if (asks && Array.isArray(asks)) {
-        for (const ask of asks) {
-          const price = parseFloat(ask.price);
-          const size = parseFloat(ask.size);
-
-          await this.env.DB.prepare(
-            `INSERT INTO orderbook_entries (market_id, side, price, size, timestamp, offset, nonce)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
-          ).bind(marketId, 'ask', price, size, timestamp, offset, nonce).run();
-          savedCount++;
-        }
-      }
-
-      // Speichere Bids
-      if (bids && Array.isArray(bids)) {
-        for (const bid of bids) {
-          const price = parseFloat(bid.price);
-          const size = parseFloat(bid.size);
-
-          await this.env.DB.prepare(
-            `INSERT INTO orderbook_entries (market_id, side, price, size, timestamp, offset, nonce)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
-          ).bind(marketId, 'bid', price, size, timestamp, offset, nonce).run();
-          savedCount++;
-        }
-      }
-
-      // Update Tracker Statistiken
-      const tracker = this.orderbookTrackers.get(marketId);
-      if (tracker) {
-        tracker.entryCount += savedCount;
-        tracker.lastUpdate = timestamp;
-        await this.state.storage.put(`orderbook:${marketId}`, tracker);
-      }
-
-      console.log(`📚 Saved orderbook update for market ${marketId}: ${asks?.length || 0} asks, ${bids?.length || 0} bids (total: ${tracker?.entryCount || 0})`);
-    } catch (error) {
-      console.error('Error saving orderbook to database:', error);
-    }
+    // Send current stats
+    await this.sendStats(websocket);
   }
 
   async handleClientMessage(data: any, websocket: WebSocket) {
     switch (data.type) {
-      case 'add_monitor':
-        await this.addMonitor(data.tokenId, data.threshold, data.monitorType);
+      case 'get_stats':
+        await this.sendStats(websocket);
         break;
 
-      case 'remove_monitor':
-        await this.removeMonitor(data.tokenId);
-        break;
-
-      case 'add_orderbook_tracker':
-        await this.addOrderbookTracker(data.marketId);
-        break;
-
-      case 'remove_orderbook_tracker':
-        await this.removeOrderbookTracker(data.marketId);
-        break;
-
-      case 'get_orderbook_stats':
-        await this.sendOrderbookStats(websocket, data.marketId);
-        break;
-
-      case 'get_state':
-        await this.sendCurrentState(websocket);
-        break;
-
-      case 'get_alerts':
-        await this.sendAlertHistory(websocket, data.limit || 100);
-        break;
-
-      case 'clear_alerts':
-        await this.clearAlerts(data.tokenId);
-        websocket.send(JSON.stringify({
-          type: 'alerts_cleared',
-          data: { tokenId: data.tokenId }
-        }));
+      case 'get_markets':
+        await this.sendMarkets(websocket);
         break;
     }
   }
 
-  async addMonitor(tokenId: string, threshold: number, type: 'above' | 'below') {
-    const monitor: TokenMonitor = {
-      tokenId,
-      threshold,
-      type,
-      lastPrice: null,
-      lastUpdate: null,
-      createdAt: Date.now(),
-      enabled: true
-    };
+  async sendStats(websocket: WebSocket) {
+    try {
+      const stats = await this.env.DB.prepare(
+        `SELECT
+          source,
+          COUNT(*) as total_entries,
+          COUNT(DISTINCT normalized_symbol) as unique_symbols,
+          MAX(timestamp) as last_update
+         FROM orderbook_entries
+         GROUP BY source`
+      ).all();
 
-    this.monitoredTokens.set(tokenId, monitor);
+      const tradeStats = await this.env.DB.prepare(
+        `SELECT
+          COUNT(*) as total_trades,
+          COUNT(CASE WHEN trade_type = 'RPI' THEN 1 END) as rpi_trades,
+          COUNT(CASE WHEN trade_type = 'FILL' THEN 1 END) as fill_trades
+         FROM paradex_trades`
+      ).first();
 
-    // Persistent speichern
-    await this.state.storage.put(`monitor:${tokenId}`, monitor);
-
-    // Lighter-Verbindung starten falls noch nicht aktiv
-    if (!this.lighterWs) {
-      await this.connectToLighter();
-    } else {
-      // Abonniere Token
-      this.subscribeTicker(tokenId);
+      websocket.send(JSON.stringify({
+        type: 'stats',
+        data: {
+          orderbook: stats.results || [],
+          trades: tradeStats,
+          lighter_markets: this.lighterMarkets.size,
+          paradex_markets: this.paradexMarkets.size,
+          lighter_connected: this.lighterWs?.readyState === WebSocket.OPEN,
+          paradex_connected: this.paradexWs?.readyState === WebSocket.OPEN
+        }
+      }));
+    } catch (error) {
+      console.error('Error sending stats:', error);
     }
-
-    // Benachrichtige alle Clients
-    this.broadcast({
-      type: 'monitor_added',
-      data: monitor
-    });
   }
 
-  async removeMonitor(tokenId: string) {
-    this.monitoredTokens.delete(tokenId);
-    await this.state.storage.delete(`monitor:${tokenId}`);
-    this.unsubscribeTicker(tokenId);
-
-    // Wenn keine Monitore und Tracker mehr: Lighter-Verbindung schließen
-    if (this.monitoredTokens.size === 0 && this.orderbookTrackers.size === 0) {
-      this.disconnectFromLighter();
-    }
-
-    this.broadcast({
-      type: 'monitor_removed',
-      data: { tokenId }
-    });
-  }
-
-  async addOrderbookTracker(marketId: string) {
-    const tracker: OrderbookTracker = {
-      marketId,
-      createdAt: Date.now(),
-      entryCount: 0,
-      lastUpdate: null
-    };
-
-    this.orderbookTrackers.set(marketId, tracker);
-
-    // Persistent speichern
-    await this.state.storage.put(`orderbook:${marketId}`, tracker);
-
-    // Lighter-Verbindung starten falls noch nicht aktiv
-    if (!this.lighterWs) {
-      await this.connectToLighter();
-    } else {
-      // Abonniere Orderbook
-      this.subscribeOrderbook(marketId);
-    }
-
-    // Benachrichtige alle Clients
-    this.broadcast({
-      type: 'orderbook_tracker_added',
-      data: tracker
-    });
-  }
-
-  async removeOrderbookTracker(marketId: string) {
-    this.orderbookTrackers.delete(marketId);
-    await this.state.storage.delete(`orderbook:${marketId}`);
-    this.unsubscribeOrderbook(marketId);
-
-    // Wenn keine Monitore und Tracker mehr: Lighter-Verbindung schließen
-    if (this.monitoredTokens.size === 0 && this.orderbookTrackers.size === 0) {
-      this.disconnectFromLighter();
-    }
-
-    this.broadcast({
-      type: 'orderbook_tracker_removed',
-      data: { marketId }
-    });
-  }
-
-  async sendCurrentState(websocket: WebSocket) {
-    const monitors = Array.from(this.monitoredTokens.values());
-    const orderbookTrackers = Array.from(this.orderbookTrackers.values());
-
-    // Lade Statistiken für alle Tracker
-    const trackersWithStats = await Promise.all(
-      orderbookTrackers.map(async (tracker) => {
-        const stats = await this.getOrderbookStatsForMarket(tracker.marketId);
-        return { ...tracker, ...stats };
-      })
-    );
-
+  async sendMarkets(websocket: WebSocket) {
     websocket.send(JSON.stringify({
-      type: 'current_state',
+      type: 'markets',
       data: {
-        monitors,
-        orderbookTrackers: trackersWithStats,
-        connected: this.lighterWs?.readyState === WebSocket.OPEN
+        lighter: Array.from(this.lighterMarkets),
+        paradex: Array.from(this.paradexMarkets)
       }
     }));
-  }
-
-  async sendOrderbookStats(websocket: WebSocket, marketId?: string) {
-    if (marketId) {
-      const stats = await this.getOrderbookStatsForMarket(marketId);
-      websocket.send(JSON.stringify({
-        type: 'orderbook_stats',
-        data: { marketId, ...stats }
-      }));
-    } else {
-      // Stats für alle Tracker
-      const allStats = await Promise.all(
-        Array.from(this.orderbookTrackers.keys()).map(async (id) => ({
-          marketId: id,
-          ...(await this.getOrderbookStatsForMarket(id))
-        }))
-      );
-      websocket.send(JSON.stringify({
-        type: 'orderbook_stats',
-        data: allStats
-      }));
-    }
-  }
-
-  async getOrderbookStatsForMarket(marketId: string) {
-    try {
-      const result = await this.env.DB.prepare(
-        `SELECT
-          COUNT(*) as total_entries,
-          COUNT(CASE WHEN side = 'ask' THEN 1 END) as asks_count,
-          COUNT(CASE WHEN side = 'bid' THEN 1 END) as bids_count,
-          MAX(timestamp) as last_update,
-          MIN(timestamp) as first_entry
-         FROM orderbook_entries
-         WHERE market_id = ?`
-      ).bind(marketId).first();
-
-      return {
-        entryCount: result?.total_entries || 0,
-        asksCount: result?.asks_count || 0,
-        bidsCount: result?.bids_count || 0,
-        lastUpdate: result?.last_update || null,
-        firstEntry: result?.first_entry || null
-      };
-    } catch (error) {
-      console.error('Error getting orderbook stats:', error);
-      return {
-        entryCount: 0,
-        asksCount: 0,
-        bidsCount: 0,
-        lastUpdate: null,
-        firstEntry: null
-      };
-    }
-  }
-
-  async sendAlertHistory(websocket: WebSocket, limit: number = 100) {
-    try {
-      const result = await this.env.DB.prepare(
-        `SELECT * FROM alerts 
-         ORDER BY timestamp DESC 
-         LIMIT ?`
-      ).bind(limit).all();
-
-      websocket.send(JSON.stringify({
-        type: 'alert_history',
-        data: result.results || []
-      }));
-    } catch (error) {
-      console.error('Error fetching alert history:', error);
-      websocket.send(JSON.stringify({
-        type: 'alert_history',
-        data: []
-      }));
-    }
-  }
-
-  async clearAlerts(tokenId?: string) {
-    try {
-      if (tokenId) {
-        await this.env.DB.prepare(
-          `DELETE FROM alerts WHERE token_id = ?`
-        ).bind(tokenId).run();
-      } else {
-        await this.env.DB.prepare(
-          `DELETE FROM alerts`
-        ).run();
-      }
-    } catch (error) {
-      console.error('Error clearing alerts:', error);
-    }
   }
 
   broadcast(message: any) {
@@ -633,7 +581,7 @@ export class PriceMonitor {
       try {
         session.send(data);
       } catch (error) {
-        console.error('Error broadcasting to session:', error);
+        console.error('Error broadcasting:', error);
       }
     }
   }
@@ -656,66 +604,51 @@ export default {
 
     // WebSocket-Verbindung
     if (url.pathname === '/ws') {
-      const id = env.PRICE_MONITOR.idFromName('price-monitor');
-      const stub = env.PRICE_MONITOR.get(id);
+      const id = env.ORDERBOOK_TRACKER.idFromName('orderbook-tracker');
+      const stub = env.ORDERBOOK_TRACKER.get(id);
       return stub.fetch(request);
-    }
-
-    // HTTP API: Alert-Historie abrufen
-    if (url.pathname === '/api/alerts') {
-      try {
-        const limit = parseInt(url.searchParams.get('limit') || '100');
-        const result = await env.DB.prepare(
-          `SELECT * FROM alerts
-           ORDER BY timestamp DESC
-           LIMIT ?`
-        ).bind(limit).all();
-
-        return new Response(JSON.stringify(result.results), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: 'Database error' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
     }
 
     // HTTP API: Orderbook-Daten abrufen
     if (url.pathname.startsWith('/api/orderbook/')) {
-      try {
-        const marketId = url.pathname.replace('/api/orderbook/', '');
+      const marketOrSymbol = url.pathname.replace('/api/orderbook/', '');
 
-        // Query-Parameter
-        const limitParam = url.searchParams.get('limit');
-        const limit = limitParam ? parseInt(limitParam) : null;
-        const offset = parseInt(url.searchParams.get('offset') || '0');
-        const side = url.searchParams.get('side'); // 'ask', 'bid', oder null für beide
-        let from = url.searchParams.get('from'); // Timestamp Start
-        const to = url.searchParams.get('to'); // Timestamp Ende
-        const timeframe = url.searchParams.get('timeframe'); // '1m', '5m', '15m', '30m', '1h'
+      // Query-Parameter
+      const limitParam = url.searchParams.get('limit');
+      const limit = limitParam ? parseInt(limitParam) : null;
+      const offset = parseInt(url.searchParams.get('offset') || '0');
+      const source = url.searchParams.get('source'); // 'lighter', 'paradex', oder null für beide
+      const side = url.searchParams.get('side');
+      let from = url.searchParams.get('from');
+      const to = url.searchParams.get('to');
+      const timeframe = url.searchParams.get('timeframe');
 
-        // Timeframe zu Timestamp konvertieren
-        if (timeframe) {
-          const now = Date.now();
-          const timeframeMap: { [key: string]: number } = {
-            '1m': 1 * 60 * 1000,
-            '5m': 5 * 60 * 1000,
-            '15m': 15 * 60 * 1000,
-            '30m': 30 * 60 * 1000,
-            '1h': 60 * 60 * 1000,
-            '60m': 60 * 60 * 1000
-          };
+      // Timeframe zu Timestamp konvertieren
+      if (timeframe) {
+        const now = Date.now();
+        const timeframeMap: { [key: string]: number } = {
+          '1m': 1 * 60 * 1000,
+          '5m': 5 * 60 * 1000,
+          '15m': 15 * 60 * 1000,
+          '30m': 30 * 60 * 1000,
+          '1h': 60 * 60 * 1000,
+          '60m': 60 * 60 * 1000
+        };
 
-          if (timeframeMap[timeframe]) {
-            from = String(now - timeframeMap[timeframe]);
-          }
+        if (timeframeMap[timeframe]) {
+          from = String(now - timeframeMap[timeframe]);
         }
+      }
 
+      try {
         // Build Query dynamisch
-        let query = 'SELECT * FROM orderbook_entries WHERE market_id = ?';
-        const bindings: any[] = [marketId];
+        let query = 'SELECT * FROM orderbook_entries WHERE (market_id = ? OR normalized_symbol = ?)';
+        const bindings: any[] = [marketOrSymbol, marketOrSymbol];
+
+        if (source && (source === 'lighter' || source === 'paradex')) {
+          query += ' AND source = ?';
+          bindings.push(source);
+        }
 
         if (side && (side === 'ask' || side === 'bid')) {
           query += ' AND side = ?';
@@ -734,7 +667,6 @@ export default {
 
         query += ' ORDER BY timestamp DESC';
 
-        // Nur LIMIT hinzufügen, wenn explizit angegeben
         if (limit !== null) {
           query += ' LIMIT ? OFFSET ?';
           bindings.push(limit, offset);
@@ -742,20 +674,22 @@ export default {
 
         const result = await env.DB.prepare(query).bind(...bindings).all();
 
-        // Zusätzliche Statistiken
+        // Stats
         const statsResult = await env.DB.prepare(
           `SELECT
+            source,
             COUNT(*) as total_entries,
             COUNT(CASE WHEN side = 'ask' THEN 1 END) as asks_count,
             COUNT(CASE WHEN side = 'bid' THEN 1 END) as bids_count,
             MAX(timestamp) as last_update,
             MIN(timestamp) as first_entry
            FROM orderbook_entries
-           WHERE market_id = ?`
-        ).bind(marketId).first();
+           WHERE market_id = ? OR normalized_symbol = ?
+           GROUP BY source`
+        ).bind(marketOrSymbol, marketOrSymbol).all();
 
         return new Response(JSON.stringify({
-          marketId,
+          market: marketOrSymbol,
           entries: result.results || [],
           pagination: {
             limit: limit !== null ? limit : 'none',
@@ -763,17 +697,94 @@ export default {
             count: result.results?.length || 0
           },
           filters: {
+            source: source || 'all',
             side: side || 'all',
             timeframe: timeframe || null,
             from: from ? parseInt(from) : null,
             to: to ? parseInt(to) : null
           },
-          stats: {
-            totalEntries: statsResult?.total_entries || 0,
-            asksCount: statsResult?.asks_count || 0,
-            bidsCount: statsResult?.bids_count || 0,
-            lastUpdate: statsResult?.last_update || null,
-            firstEntry: statsResult?.first_entry || null
+          stats: statsResult.results || []
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error', details: String(error) }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // HTTP API: Paradex Trades abrufen
+    if (url.pathname.startsWith('/api/trades/')) {
+      const marketOrSymbol = url.pathname.replace('/api/trades/', '');
+
+      const limitParam = url.searchParams.get('limit');
+      const limit = limitParam ? parseInt(limitParam) : null;
+      const offset = parseInt(url.searchParams.get('offset') || '0');
+      const tradeType = url.searchParams.get('type'); // 'RPI', 'FILL', oder null
+      let from = url.searchParams.get('from');
+      const to = url.searchParams.get('to');
+      const timeframe = url.searchParams.get('timeframe');
+
+      // Timeframe zu Timestamp konvertieren
+      if (timeframe) {
+        const now = Date.now();
+        const timeframeMap: { [key: string]: number } = {
+          '1m': 1 * 60 * 1000,
+          '5m': 5 * 60 * 1000,
+          '15m': 15 * 60 * 1000,
+          '30m': 30 * 60 * 1000,
+          '1h': 60 * 60 * 1000,
+          '60m': 60 * 60 * 1000
+        };
+
+        if (timeframeMap[timeframe]) {
+          from = String(now - timeframeMap[timeframe]);
+        }
+      }
+
+      try {
+        let query = 'SELECT * FROM paradex_trades WHERE (market = ? OR normalized_symbol = ?)';
+        const bindings: any[] = [marketOrSymbol, marketOrSymbol];
+
+        if (tradeType && (tradeType === 'RPI' || tradeType === 'FILL')) {
+          query += ' AND trade_type = ?';
+          bindings.push(tradeType);
+        }
+
+        if (from) {
+          query += ' AND created_at >= ?';
+          bindings.push(parseInt(from));
+        }
+
+        if (to) {
+          query += ' AND created_at <= ?';
+          bindings.push(parseInt(to));
+        }
+
+        query += ' ORDER BY created_at DESC';
+
+        if (limit !== null) {
+          query += ' LIMIT ? OFFSET ?';
+          bindings.push(limit, offset);
+        }
+
+        const result = await env.DB.prepare(query).bind(...bindings).all();
+
+        return new Response(JSON.stringify({
+          market: marketOrSymbol,
+          trades: result.results || [],
+          pagination: {
+            limit: limit !== null ? limit : 'none',
+            offset,
+            count: result.results?.length || 0
+          },
+          filters: {
+            type: tradeType || 'all',
+            timeframe: timeframe || null,
+            from: from ? parseInt(from) : null,
+            to: to ? parseInt(to) : null
           }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -786,20 +797,11 @@ export default {
       }
     }
 
-    // HTTP API: Liste aller Markets mit Orderbook-Daten
-    if (url.pathname === '/api/orderbook') {
+    // HTTP API: Alle verfügbaren Markets
+    if (url.pathname === '/api/markets') {
       try {
         const result = await env.DB.prepare(
-          `SELECT
-            market_id,
-            COUNT(*) as total_entries,
-            COUNT(CASE WHEN side = 'ask' THEN 1 END) as asks_count,
-            COUNT(CASE WHEN side = 'bid' THEN 1 END) as bids_count,
-            MAX(timestamp) as last_update,
-            MIN(timestamp) as first_entry
-           FROM orderbook_entries
-           GROUP BY market_id
-           ORDER BY last_update DESC`
+          `SELECT * FROM token_mapping WHERE active = 1 ORDER BY normalized_symbol`
         ).all();
 
         return new Response(JSON.stringify({
@@ -817,7 +819,7 @@ export default {
 
     // Statische Info-Seite
     if (url.pathname === '/') {
-      return new Response('Lighter Price Monitor v2 - Persistent Background Monitoring', {
+      return new Response('Multi-Exchange Orderbook Tracker - Lighter + Paradex', {
         headers: { ...corsHeaders, 'Content-Type': 'text/plain' }
       });
     }
@@ -827,29 +829,12 @@ export default {
 };
 
 // Type Definitions
-interface TokenMonitor {
-  tokenId: string;
-  threshold: number;
-  type: 'above' | 'below';
-  lastPrice: number | null;
-  lastUpdate: number | null;
-  createdAt: number;
-  enabled: boolean;
-}
-
-interface OrderbookTracker {
-  marketId: string;
-  createdAt: number;
-  entryCount: number;
-  lastUpdate: number | null;
-}
-
-interface PriceAlert {
-  id: string;
-  tokenId: string;
-  currentPrice: number;
-  threshold: number;
-  type: 'above' | 'below';
-  timestamp: number;
-  triggered: boolean;
+interface TokenMapping {
+  source: string;
+  original_symbol: string;
+  normalized_symbol: string;
+  base_asset: string | null;
+  quote_asset: string | null;
+  market_type: string | null;
+  active: number;
 }
