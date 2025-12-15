@@ -17,6 +17,7 @@ export class PriceMonitor {
   private orderbookTrackers: Map<string, OrderbookTracker>;  // NEU: Separate Orderbook-Tracker
   private lighterWs: WebSocket | null = null;
   private reconnectTimeout: any = null;
+  private pingInterval: any = null;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -119,6 +120,9 @@ export class PriceMonitor {
         for (const [marketId, tracker] of this.orderbookTrackers) {
           this.subscribeOrderbook(marketId);
         }
+
+        // Starte Ping-Interval (alle 30 Sekunden)
+        this.startPingInterval();
       });
 
       ws.addEventListener('message', (event) => {
@@ -156,11 +160,35 @@ export class PriceMonitor {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
-    
+
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+
     if (this.lighterWs) {
       this.lighterWs.close();
       this.lighterWs = null;
     }
+  }
+
+  startPingInterval() {
+    // Stoppe alten Interval falls vorhanden
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+
+    // Sende alle 30 Sekunden einen Ping
+    this.pingInterval = setInterval(() => {
+      if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
+        try {
+          this.lighterWs.send(JSON.stringify({ type: 'ping' }));
+          console.log('📡 Sent ping to Lighter WebSocket');
+        } catch (error) {
+          console.error('Error sending ping:', error);
+        }
+      }
+    }, 30000); // 30 Sekunden
   }
 
   subscribeTicker(tokenId: string) {
@@ -660,7 +688,8 @@ export default {
         const marketId = url.pathname.replace('/api/orderbook/', '');
 
         // Query-Parameter
-        const limit = parseInt(url.searchParams.get('limit') || '100');
+        const limitParam = url.searchParams.get('limit');
+        const limit = limitParam ? parseInt(limitParam) : null;
         const offset = parseInt(url.searchParams.get('offset') || '0');
         const side = url.searchParams.get('side'); // 'ask', 'bid', oder null für beide
         let from = url.searchParams.get('from'); // Timestamp Start
@@ -703,8 +732,13 @@ export default {
           bindings.push(parseInt(to));
         }
 
-        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
-        bindings.push(limit, offset);
+        query += ' ORDER BY timestamp DESC';
+
+        // Nur LIMIT hinzufügen, wenn explizit angegeben
+        if (limit !== null) {
+          query += ' LIMIT ? OFFSET ?';
+          bindings.push(limit, offset);
+        }
 
         const result = await env.DB.prepare(query).bind(...bindings).all();
 
@@ -724,7 +758,7 @@ export default {
           marketId,
           entries: result.results || [],
           pagination: {
-            limit,
+            limit: limit !== null ? limit : 'none',
             offset,
             count: result.results?.length || 0
           },
