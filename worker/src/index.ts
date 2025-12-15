@@ -167,11 +167,16 @@ export class PriceMonitor {
     try {
       const message = JSON.parse(data);
 
+      // DEBUG: Logge alle Nachrichten von Lighter
+      console.log('📩 Lighter message:', JSON.stringify(message));
+
       // Lighter verwendet market_stats Channel
       if (message.channel && message.channel.startsWith('market_stats/')) {
         const tokenId = message.channel.replace('market_stats/', '');
         // Verwende mark_price oder index_price
         const price = parseFloat(message.data?.mark_price || message.data?.index_price);
+
+        console.log(`💰 Price update for ${tokenId}:`, price);
 
         if (price && this.monitoredTokens.has(tokenId)) {
           this.checkPriceThreshold(tokenId, price);
