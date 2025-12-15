@@ -11,7 +11,7 @@ class_name = "PriceMonitor"
 [[d1_databases]]
 binding = "DB"
 database_name = "lighter-alerts"
-database_id = "YOUR_DATABASE_ID"  # Wird nach 'npm run db:create' ersetzt
+database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
 
 # Migrationen
 [[migrations]]
