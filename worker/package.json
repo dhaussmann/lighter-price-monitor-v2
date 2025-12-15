@@ -1,15 +1,17 @@
 {
-  "name": "lighter-price-monitor-worker",
-  "version": "2.0.0",
-  "description": "Cloudflare Worker for Lighter Price Monitor v2 with persistent background monitoring",
+  "name": "orderbook-tracker-worker",
+  "version": "3.0.0",
+  "description": "Multi-Exchange Orderbook Tracker - Cloudflare Worker for Lighter and Paradex",
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "db:create": "wrangler d1 create lighter-alerts",
-    "db:init": "wrangler d1 execute lighter-alerts --file=./schema.sql",
-    "db:local-init": "wrangler d1 execute lighter-alerts --local --file=./schema.sql"
+    "db:create": "wrangler d1 create orderbook-data",
+    "db:init": "wrangler d1 execute orderbook-data --remote --file=./schema.sql",
+    "db:seed": "wrangler d1 execute orderbook-data --remote --file=./seed-tokens.sql",
+    "db:local-init": "wrangler d1 execute orderbook-data --local --file=./schema.sql",
+    "db:local-seed": "wrangler d1 execute orderbook-data --local --file=./seed-tokens.sql"
   },
   "keywords": [
     "cloudflare",
@@ -17,7 +19,10 @@
     "durable-objects",
     "d1",
     "websocket",
-    "price-monitoring"
+    "orderbook",
+    "lighter",
+    "paradex",
+    "multi-exchange"
   ],
   "author": "",
   "license": "MIT",
