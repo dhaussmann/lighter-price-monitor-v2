@@ -90,7 +90,7 @@ export class PriceMonitor {
 
   async connectToLighter() {
     try {
-      const ws = new WebSocket('wss://api.lighter.xyz/v1/ws');
+      const ws = new WebSocket('wss://mainnet.zklighter.elliot.ai/stream');
       
       ws.addEventListener('open', () => {
         console.log('Connected to Lighter WebSocket');
