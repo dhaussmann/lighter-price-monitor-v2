@@ -1,0 +1,19 @@
+name = "lighter-price-monitor-v2"
+main = "src/index.ts"
+compatibility_date = "2024-12-15"
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "PRICE_MONITOR"
+class_name = "PriceMonitor"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "lighter-alerts"
+database_id = "YOUR_DATABASE_ID"  # Wird nach 'npm run db:create' ersetzt
+
+# Migrationen
+[[migrations]]
+tag = "v1"
+new_classes = ["PriceMonitor"]

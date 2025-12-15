@@ -1,0 +1,29 @@
+{
+  "name": "lighter-price-monitor-worker",
+  "version": "2.0.0",
+  "description": "Cloudflare Worker for Lighter Price Monitor v2 with persistent background monitoring",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "db:create": "wrangler d1 create lighter-alerts",
+    "db:init": "wrangler d1 execute lighter-alerts --file=./schema.sql",
+    "db:local-init": "wrangler d1 execute lighter-alerts --local --file=./schema.sql"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "durable-objects",
+    "d1",
+    "websocket",
+    "price-monitoring"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.98.0"
+  }
+}
