@@ -117,8 +117,12 @@ export class PriceMonitor {
         }
       });
 
-      ws.addEventListener('error', (error) => {
-        console.error('Lighter WebSocket error:', error);
+      ws.addEventListener('error', (error: any) => {
+        console.error('Lighter WebSocket error:', {
+          message: error?.message,
+          type: error?.type,
+          error: JSON.stringify(error, Object.getOwnPropertyNames(error))
+        });
       });
 
       this.lighterWs = ws;
