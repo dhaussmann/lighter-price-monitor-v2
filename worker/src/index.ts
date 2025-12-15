@@ -663,8 +663,26 @@ export default {
         const limit = parseInt(url.searchParams.get('limit') || '100');
         const offset = parseInt(url.searchParams.get('offset') || '0');
         const side = url.searchParams.get('side'); // 'ask', 'bid', oder null für beide
-        const from = url.searchParams.get('from'); // Timestamp Start
+        let from = url.searchParams.get('from'); // Timestamp Start
         const to = url.searchParams.get('to'); // Timestamp Ende
+        const timeframe = url.searchParams.get('timeframe'); // '1m', '5m', '15m', '30m', '1h'
+
+        // Timeframe zu Timestamp konvertieren
+        if (timeframe) {
+          const now = Date.now();
+          const timeframeMap: { [key: string]: number } = {
+            '1m': 1 * 60 * 1000,
+            '5m': 5 * 60 * 1000,
+            '15m': 15 * 60 * 1000,
+            '30m': 30 * 60 * 1000,
+            '1h': 60 * 60 * 1000,
+            '60m': 60 * 60 * 1000
+          };
+
+          if (timeframeMap[timeframe]) {
+            from = String(now - timeframeMap[timeframe]);
+          }
+        }
 
         // Build Query dynamisch
         let query = 'SELECT * FROM orderbook_entries WHERE market_id = ?';
@@ -712,6 +730,7 @@ export default {
           },
           filters: {
             side: side || 'all',
+            timeframe: timeframe || null,
             from: from ? parseInt(from) : null,
             to: to ? parseInt(to) : null
           },
