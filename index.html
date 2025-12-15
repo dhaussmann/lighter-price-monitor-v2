@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lighter Price Monitor v2 - Persistent Monitoring</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0b0d;
+      --bg-secondary: #13141a;
+      --bg-card: #1a1c26;
+      --accent-green: #00ff88;
+      --accent-red: #ff3366;
+      --accent-blue: #00d4ff;
+      --accent-purple: #b64eff;
+      --text-primary: #ffffff;
+      --text-secondary: #8b92a8;
+      --border: #2a2d3a;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Animated background */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 50px 50px;
+      opacity: 0.3;
+      animation: gridMove 20s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes gridMove {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(50px, 50px); }
+    }
+
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+      animation: float 8s ease-in-out infinite;
+    }
+
+    .orb-1 {
+      width: 400px;
+      height: 400px;
+      background: var(--accent-green);
+      top: -200px;
+      left: -200px;
+      opacity: 0.1;
+    }
+
+    .orb-2 {
+      width: 300px;
+      height: 300px;
+      background: var(--accent-purple);
+      bottom: -150px;
+      right: -150px;
+      opacity: 0.08;
+      animation-delay: -4s;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(30px, -30px) scale(1.1); }
+    }
+
+    .container {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    header {
+      margin-bottom: 40px;
+      text-align: center;
+    }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 72px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 16px;
+      letter-spacing: -2px;
+      animation: slideDown 0.8s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .subtitle {
+      font-size: 18px;
+      color: var(--text-secondary);
+      animation: fadeIn 1s ease-out 0.3s both;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      font-size: 13px;
+      margin-top: 20px;
+      animation: fadeIn 1s ease-out 0.6s both;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-badge.connected .status-dot {
+      background: var(--accent-green);
+    }
+
+    .status-badge.monitoring .status-dot {
+      background: var(--accent-blue);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.9); }
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 30px;
+      margin-bottom: 30px;
+    }
+
+    @media (max-width: 1024px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 30px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .card:hover::before {
+      opacity: 1;
+    }
+
+    .card-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 14px 16px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--accent-green);
+      box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.1);
+    }
+
+    input::placeholder {
+      color: var(--text-secondary);
+      opacity: 0.5;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .radio-option {
+      flex: 1;
+      position: relative;
+    }
+
+    .radio-option input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .radio-label {
+      display: block;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+    }
+
+    .radio-option input[type="radio"]:checked + .radio-label {
+      background: rgba(0, 255, 136, 0.1);
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+    }
+
+    .radio-label:hover {
+      border-color: var(--accent-green);
+      transform: translateY(-2px);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+      border: none;
+      border-radius: 12px;
+      color: var(--bg-primary);
+      font-family: 'Syne', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+      transition: left 0.5s ease;
+    }
+
+    .btn:hover::before {
+      left: 100%;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 255, 136, 0.3);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 10px 16px;
+      font-size: 13px;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 51, 102, 0.1);
+      border-color: var(--accent-red);
+      color: var(--accent-red);
+      box-shadow: none;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead {
+      background: var(--bg-secondary);
+    }
+
+    th {
+      padding: 16px;
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: all 0.2s ease;
+    }
+
+    tbody tr:hover {
+      background: var(--bg-secondary);
+    }
+
+    tbody tr.new-alert {
+      animation: highlight 0.8s ease;
+    }
+
+    @keyframes highlight {
+      0%, 100% { background: var(--bg-card); }
+      50% { background: rgba(0, 255, 136, 0.15); }
+    }
+
+    td {
+      padding: 16px;
+      font-size: 14px;
+    }
+
+    .token-id {
+      font-weight: 600;
+      color: var(--accent-blue);
+    }
+
+    .price {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-above {
+      background: rgba(255, 51, 102, 0.15);
+      color: var(--accent-red);
+      border: 1px solid rgba(255, 51, 102, 0.3);
+    }
+
+    .badge-below {
+      background: rgba(0, 255, 136, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+    }
+
+    .timestamp {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent-green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .info-box {
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: var(--accent-blue);
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--bg-secondary);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      font-family: 'Syne', sans-serif;
+      color: var(--accent-green);
+    }
+  </style>
+</head>
+<body>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  
+  <div class="container">
+    <header>
+      <h1>LIGHTER MONITOR v2</h1>
+      <p class="subtitle">Persistente Hintergrund-Überwachung • Läuft auch wenn du offline bist</p>
+      <div id="statusBadge" class="status-badge">
+        <span class="status-dot"></span>
+        <span id="statusText">Verbindung wird hergestellt...</span>
+      </div>
+    </header>
+
+    <div class="info-box">
+      <strong>💡 Wie funktioniert das persistente Monitoring?</strong>
+      Sobald du einen Monitor aktivierst, läuft die Überwachung permanent auf dem Server - auch wenn du die Website schließt! Kommst du zurück, siehst du alle Preis-Alarme in der Historie-Tabelle. Perfect für Langzeit-Monitoring! 
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-label">Aktive Monitore</div>
+        <div class="stat-value" id="statMonitors">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Gesamt-Alarme</div>
+        <div class="stat-value" id="statAlerts">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Monitoring-Status</div>
+        <div class="stat-value" id="statStatus" style="font-size: 16px; color: var(--text-secondary);">OFFLINE</div>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <div class="card">
+        <h2 class="card-title">
+          <span>➕</span>
+          Monitor hinzufügen
+        </h2>
+        <form id="monitorForm">
+          <div class="form-group">
+            <label>Token ID</label>
+            <input
+              type="text"
+              id="tokenId"
+              placeholder="z.B. WETH_USDC"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Schwellwert (Preis)</label>
+            <input
+              type="number"
+              step="any"
+              id="threshold"
+              placeholder="z.B. 3500.00"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Alarm bei</label>
+            <div class="radio-group">
+              <div class="radio-option">
+                <input
+                  type="radio"
+                  id="below"
+                  name="type"
+                  value="below"
+                  checked
+                />
+                <label for="below" class="radio-label">
+                  ↓ Unter Schwellwert
+                </label>
+              </div>
+              <div class="radio-option">
+                <input
+                  type="radio"
+                  id="above"
+                  name="type"
+                  value="above"
+                />
+                <label for="above" class="radio-label">
+                  ↑ Über Schwellwert
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn" id="addBtn">
+            Monitor aktivieren
+          </button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">
+          <span>📊</span>
+          Aktive Monitore
+          <span id="monitorCount" style="margin-left: auto; font-size: 18px; color: var(--text-secondary);">(0)</span>
+        </h2>
+        
+        <div id="monitorsTable"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <h2 class="card-title" style="margin: 0;">
+          <span>🔔</span>
+          Preis-Alarm Historie
+          <span id="alertCount" style="margin-left: 12px; font-size: 18px; color: var(--text-secondary);">(0)</span>
+        </h2>
+        <button class="btn btn-secondary" onclick="clearAllAlerts()">
+          Alle löschen
+        </button>
+      </div>
+      
+      <div id="alertsTable"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <script>
+    // WebSocket-URL (nach Deployment anpassen!)
+    const WS_URL = 'wss://lighter-price-monitor-v2.YOUR_SUBDOMAIN.workers.dev/ws';
+    // Für lokale Entwicklung: 'ws://localhost:8787/ws'
+    
+    let ws = null;
+    let monitors = [];
+    let alerts = [];
+    let reconnectTimer = null;
+
+    // Initialisierung
+    document.addEventListener('DOMContentLoaded', () => {
+      connectWebSocket();
+      
+      document.getElementById('monitorForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        addMonitor();
+      });
+    });
+
+    function connectWebSocket() {
+      try {
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = () => {
+          console.log('WebSocket connected');
+          updateStatus('connected', 'Verbunden');
+          
+          // Lade aktuellen Status
+          ws.send(JSON.stringify({ type: 'get_state' }));
+          ws.send(JSON.stringify({ type: 'get_alerts', limit: 100 }));
+        };
+
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          handleMessage(message);
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket disconnected');
+          updateStatus('disconnected', 'Verbindung unterbrochen');
+          
+          // Auto-Reconnect
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+        };
+      } catch (error) {
+        console.error('Failed to connect:', error);
+        updateStatus('error', 'Verbindungsfehler');
+      }
+    }
+
+    function handleMessage(message) {
+      switch (message.type) {
+        case 'current_state':
+          monitors = message.data.monitors || [];
+          updateMonitorsTable();
+          updateStats();
+          if (message.data.connected) {
+            updateStatus('monitoring', 'Monitoring aktiv');
+          }
+          break;
+        
+        case 'monitor_added':
+          monitors.push(message.data);
+          updateMonitorsTable();
+          updateStats();
+          break;
+        
+        case 'monitor_removed':
+          monitors = monitors.filter(m => m.tokenId !== message.data.tokenId);
+          alerts = alerts.filter(a => a.token_id !== message.data.tokenId);
+          updateMonitorsTable();
+          updateAlertsTable();
+          updateStats();
+          break;
+        
+        case 'price_update':
+          const monitor = monitors.find(m => m.tokenId === message.data.tokenId);
+          if (monitor) {
+            monitor.lastPrice = message.data.currentPrice;
+            monitor.lastUpdate = message.data.lastUpdate;
+            updateMonitorsTable();
+          }
+          break;
+        
+        case 'price_alert':
+          // Neuer Alert! 
+          const alertData = {
+            id: message.data.id,
+            token_id: message.data.tokenId,
+            current_price: message.data.currentPrice,
+            threshold: message.data.threshold,
+            type: message.data.type,
+            timestamp: message.data.timestamp,
+            triggered: 1
+          };
+          alerts.unshift(alertData);
+          updateAlertsTable();
+          updateStats();
+          
+          // Zeige Browser-Notification (optional)
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(`Preis-Alarm: ${alertData.token_id}`, {
+              body: `Preis ${alertData.type === 'above' ? 'über' : 'unter'} ${formatPrice(alertData.threshold)}`,
+              icon: '/favicon.ico'
+            });
+          }
+          break;
+        
+        case 'alert_history':
+          alerts = message.data || [];
+          updateAlertsTable();
+          updateStats();
+          break;
+        
+        case 'alerts_cleared':
+          if (message.data.tokenId) {
+            alerts = alerts.filter(a => a.token_id !== message.data.tokenId);
+          } else {
+            alerts = [];
+          }
+          updateAlertsTable();
+          updateStats();
+          break;
+      }
+    }
+
+    function addMonitor() {
+      const tokenId = document.getElementById('tokenId').value.trim();
+      const threshold = parseFloat(document.getElementById('threshold').value);
+      const type = document.querySelector('input[name="type"]:checked').value;
+
+      if (!tokenId || !threshold || !ws) return;
+
+      ws.send(JSON.stringify({
+        type: 'add_monitor',
+        tokenId: tokenId,
+        threshold: threshold,
+        monitorType: type
+      }));
+
+      // Reset Form
+      document.getElementById('tokenId').value = '';
+      document.getElementById('threshold').value = '';
+    }
+
+    function removeMonitor(tokenId) {
+      if (!ws || !confirm(`Monitor für ${tokenId} wirklich entfernen?`)) return;
+      
+      ws.send(JSON.stringify({
+        type: 'remove_monitor',
+        tokenId: tokenId
+      }));
+    }
+
+    function clearAllAlerts() {
+      if (!ws || !confirm('Alle Alarme wirklich löschen?')) return;
+      
+      ws.send(JSON.stringify({
+        type: 'clear_alerts'
+      }));
+    }
+
+    function updateMonitorsTable() {
+      const container = document.getElementById('monitorsTable');
+      document.getElementById('monitorCount').textContent = `(${monitors.length})`;
+
+      if (monitors.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <p>Keine aktiven Monitore</p>
+            <p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">
+              Füge einen Monitor hinzu, um zu starten
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = `
+        <table>
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>Schwellwert</th>
+              <th>Aktueller Preis</th>
+              <th>Typ</th>
+              <th>Letzte Aktualisierung</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${monitors.map(m => `
+              <tr>
+                <td><span class="token-id">${m.tokenId}</span></td>
+                <td class="price">${formatPrice(m.threshold)}</td>
+                <td class="price">
+                  ${m.lastPrice ? formatPrice(m.lastPrice) : '<span class="loading"></span>'}
+                </td>
+                <td>
+                  <span class="badge badge-${m.type}">
+                    ${m.type === 'above' ? '↑ Über' : '↓ Unter'}
+                  </span>
+                </td>
+                <td class="timestamp">${formatTime(m.lastUpdate)}</td>
+                <td>
+                  <button class="btn-secondary" onclick="removeMonitor('${m.tokenId}')">
+                    Entfernen
+                  </button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+      container.innerHTML = html;
+    }
+
+    function updateAlertsTable() {
+      const container = document.getElementById('alertsTable');
+      document.getElementById('alertCount').textContent = `(${alerts.length})`;
+
+      if (alerts.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">✅</div>
+            <p>Noch keine Preis-Alarme</p>
+            <p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">
+              Wenn ein Schwellwert erreicht wird, erscheint hier der Alert
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = `
+        <table>
+          <thead>
+            <tr>
+              <th>Zeitstempel</th>
+              <th>Token</th>
+              <th>Preis</th>
+              <th>Schwellwert</th>
+              <th>Typ</th>
+              <th>Differenz</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${alerts.map((a, idx) => `
+              <tr class="${idx === 0 ? 'new-alert' : ''}">
+                <td class="timestamp">${formatFullTime(a.timestamp)}</td>
+                <td><span class="token-id">${a.token_id}</span></td>
+                <td class="price">${formatPrice(a.current_price)}</td>
+                <td class="price">${formatPrice(a.threshold)}</td>
+                <td>
+                  <span class="badge badge-${a.type}">
+                    ${a.type === 'above' ? '↑ Überschritten' : '↓ Unterschritten'}
+                  </span>
+                </td>
+                <td class="price">
+                  ${formatPriceDiff(a.current_price, a.threshold)}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+      container.innerHTML = html;
+    }
+
+    function updateStats() {
+      document.getElementById('statMonitors').textContent = monitors.length;
+      document.getElementById('statAlerts').textContent = alerts.length;
+      document.getElementById('statStatus').textContent = 
+        monitors.length > 0 ? 'AKTIV' : 'BEREIT';
+      document.getElementById('statStatus').style.color = 
+        monitors.length > 0 ? 'var(--accent-green)' : 'var(--text-secondary)';
+    }
+
+    function updateStatus(status, text) {
+      const badge = document.getElementById('statusBadge');
+      const statusText = document.getElementById('statusText');
+      
+      badge.className = 'status-badge';
+      if (status === 'connected' || status === 'monitoring') {
+        badge.classList.add(status);
+      }
+      
+      statusText.textContent = text;
+      
+      document.getElementById('addBtn').disabled = status === 'disconnected';
+    }
+
+    function formatPrice(price) {
+      if (price === null || price === undefined) return '-';
+      return new Intl.NumberFormat('de-DE', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 8
+      }).format(price);
+    }
+
+    function formatPriceDiff(current, threshold) {
+      const diff = current - threshold;
+      const sign = diff > 0 ? '+' : '';
+      return `${sign}${formatPrice(Math.abs(diff))}`;
+    }
+
+    function formatTime(timestamp) {
+      if (!timestamp) return '-';
+      return new Date(timestamp).toLocaleTimeString('de-DE');
+    }
+
+    function formatFullTime(timestamp) {
+      if (!timestamp) return '-';
+      const date = new Date(timestamp);
+      return date.toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+
+    // Notification-Permission anfragen (optional)
+    if ('Notification' in window && Notification.permission === 'default') {
+      setTimeout(() => {
+        Notification.requestPermission();
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
