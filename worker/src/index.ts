@@ -142,8 +142,8 @@ export class PriceMonitor {
   subscribeTicker(tokenId: string) {
     if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
       const subscribeMsg = {
-        method: 'subscribe',
-        params: [`ticker.${tokenId}`]
+        type: 'subscribe',
+        channel: `market_stats/${tokenId}`
       };
       this.lighterWs.send(JSON.stringify(subscribeMsg));
     }
@@ -152,8 +152,8 @@ export class PriceMonitor {
   unsubscribeTicker(tokenId: string) {
     if (this.lighterWs && this.lighterWs.readyState === WebSocket.OPEN) {
       const unsubscribeMsg = {
-        method: 'unsubscribe',
-        params: [`ticker.${tokenId}`]
+        type: 'unsubscribe',
+        channel: `market_stats/${tokenId}`
       };
       this.lighterWs.send(JSON.stringify(unsubscribeMsg));
     }
@@ -162,11 +162,13 @@ export class PriceMonitor {
   handleLighterMessage(data: string) {
     try {
       const message = JSON.parse(data);
-      
-      if (message.stream && message.stream.startsWith('ticker.')) {
-        const tokenId = message.stream.replace('ticker.', '');
-        const price = parseFloat(message.data?.last_price || message.data?.c);
-        
+
+      // Lighter verwendet market_stats Channel
+      if (message.channel && message.channel.startsWith('market_stats/')) {
+        const tokenId = message.channel.replace('market_stats/', '');
+        // Verwende mark_price oder index_price
+        const price = parseFloat(message.data?.mark_price || message.data?.index_price);
+
         if (price && this.monitoredTokens.has(tokenId)) {
           this.checkPriceThreshold(tokenId, price);
         }
