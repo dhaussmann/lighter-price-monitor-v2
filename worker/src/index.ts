@@ -594,6 +594,11 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
         <span>Auto-Refresh alle 30 Sekunden</span>
         <span id="lastUpdate" style="margin-left: 12px; opacity: 0.6;">-</span>
       </div>
+      <div style="margin-top: 20px; display: flex; gap: 12px; justify-content: center;">
+        <button id="startBtn" style="padding: 10px 24px; background: var(--accent-green); color: var(--bg-primary); border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-family: inherit; font-size: 14px;">▶ Start Tracking</button>
+        <button id="stopBtn" style="padding: 10px 24px; background: var(--accent-red); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-family: inherit; font-size: 14px;">⏸ Stop Tracking</button>
+        <span id="trackingStatus" style="padding: 10px 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 13px;">Status: <span id="statusText">...</span></span>
+      </div>
     </div>
     <div id="tableContainer">
       <div class="empty-state">
@@ -604,7 +609,69 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   </div>
   <script>
     const API_URL = '/api/overview';
+    const WS_URL = window.location.protocol === 'https:' ? 'wss://' + window.location.host + '/ws' : 'ws://' + window.location.host + '/ws';
     let previousData = new Map();
+    let ws = null;
+
+    // Connect to WebSocket for tracking controls
+    function connectWebSocket() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        ws.send(JSON.stringify({ type: 'get_stats' }));
+      };
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'stats') {
+          updateTrackingStatus(message.data.is_tracking);
+        } else if (message.type === 'tracking_control') {
+          alert(message.data.message);
+          ws.send(JSON.stringify({ type: 'get_stats' }));
+        } else if (message.type === 'tracking_status') {
+          updateTrackingStatus(message.data.isTracking);
+        }
+      };
+      ws.onclose = () => {
+        setTimeout(connectWebSocket, 5000);
+      };
+    }
+
+    function updateTrackingStatus(isTracking) {
+      const statusText = document.getElementById('statusText');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+
+      if (isTracking) {
+        statusText.textContent = '🟢 Running';
+        statusText.style.color = 'var(--accent-green)';
+        startBtn.disabled = true;
+        startBtn.style.opacity = '0.5';
+        stopBtn.disabled = false;
+        stopBtn.style.opacity = '1';
+      } else {
+        statusText.textContent = '🔴 Stopped';
+        statusText.style.color = 'var(--accent-red)';
+        startBtn.disabled = false;
+        startBtn.style.opacity = '1';
+        stopBtn.disabled = true;
+        stopBtn.style.opacity = '0.5';
+      }
+    }
+
+    // Button handlers
+    document.getElementById('startBtn').addEventListener('click', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'start_tracking' }));
+      }
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'stop_tracking' }));
+      }
+    });
+
+    connectWebSocket();
     loadData();
     setInterval(loadData, 30000);
     async function loadData() {
@@ -720,13 +787,23 @@ export class OrderbookTracker {
   private lighterMarkets: Set<string> = new Set();
   private paradexMarkets: Set<string> = new Set();
 
+  // Tracking state
+  private isTracking: boolean = false;
+
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     this.sessions = new Set();
 
-    // Auto-start tracking on initialization
-    this.initialize();
+    // Load tracking state
+    this.state.blockConcurrencyWhile(async () => {
+      this.isTracking = await this.state.storage.get<boolean>('isTracking') ?? false;
+    });
+
+    // Auto-start tracking on initialization only if enabled
+    if (this.isTracking) {
+      this.initialize();
+    }
   }
 
   async initialize() {
@@ -780,8 +857,12 @@ export class OrderbookTracker {
       const paradexData = await paradexResponse.json();
 
       if (paradexData.results) {
-        // Track ALL PERP markets
-        const perpMarkets = paradexData.results.filter((m: any) => m.market_type === 'PERP');
+        // Track ONLY PERP markets (exclude OPTIONS)
+        const perpMarkets = paradexData.results.filter((m: any) =>
+          m.market_type === 'PERP' && !m.symbol.includes('OPTION')
+        );
+
+        console.log(`Found ${perpMarkets.length} Paradex PERP markets (excluding options)`);
 
         for (const market of perpMarkets) {
           this.paradexMarkets.add(market.symbol);
@@ -790,7 +871,7 @@ export class OrderbookTracker {
           const baseAsset = market.symbol.split('-')[0];
           await this.ensureTokenMapping('paradex', market.symbol, baseAsset);
         }
-        console.log(`Tracking ${this.paradexMarkets.size} Paradex markets (ALL PERP markets)`);
+        console.log(`Tracking ${this.paradexMarkets.size} Paradex markets (PERP only, no options)`);
       }
 
       // Start periodic cleanup (every 30 minutes)
@@ -935,9 +1016,9 @@ export class OrderbookTracker {
       const { asks, bids, offset, nonce } = order_book;
       const normalizedSymbol = this.getNormalizedSymbol('lighter', marketId);
 
-      // Limit to 3 asks and 3 bids (top of book) to save memory
-      const limitedAsks = asks?.slice(0, 3) || [];
-      const limitedBids = bids?.slice(0, 3) || [];
+      // Limit to 1 ask and 1 bid (best price only) to save memory
+      const limitedAsks = asks?.slice(0, 1) || [];
+      const limitedBids = bids?.slice(0, 1) || [];
 
       // Batch insert using single statement
       if (limitedAsks.length > 0 || limitedBids.length > 0) {
@@ -1108,8 +1189,8 @@ export class OrderbookTracker {
 
       const normalizedSymbol = this.getNormalizedSymbol('paradex', market);
 
-      // Limit to 3 entries (top of book) to save memory
-      const limitedInserts = inserts.slice(0, 3);
+      // Limit to 1 entry per side (best price only) to save memory
+      const limitedInserts = inserts.slice(0, 1);
 
       if (limitedInserts.length > 0) {
         const values: string[] = [];
@@ -1181,22 +1262,74 @@ export class OrderbookTracker {
 
   async cleanupOldData() {
     try {
-      const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000); // 2 hours
+      const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000); // 30 minutes
 
       // Delete old orderbook entries
       const orderbookResult = await this.env.DB.prepare(
         `DELETE FROM orderbook_entries WHERE timestamp < ?`
-      ).bind(twoHoursAgo).run();
+      ).bind(thirtyMinutesAgo).run();
 
       // Delete old trades
       const tradesResult = await this.env.DB.prepare(
         `DELETE FROM paradex_trades WHERE created_at < ?`
-      ).bind(twoHoursAgo).run();
+      ).bind(thirtyMinutesAgo).run();
 
-      console.log(`🧹 Cleanup: Removed ${orderbookResult.meta.changes || 0} old orderbook entries and ${tradesResult.meta.changes || 0} old trades`);
+      console.log(`🧹 Cleanup: Removed ${orderbookResult.meta.changes || 0} old orderbook entries and ${tradesResult.meta.changes || 0} old trades (>30min)`);
     } catch (error) {
       console.error('Error during cleanup:', error);
     }
+  }
+
+  // ========== Start/Stop Control ==========
+
+  async startTracking() {
+    if (this.isTracking) {
+      console.log('⚠️ Tracking already running');
+      return { success: false, message: 'Tracking already running' };
+    }
+
+    this.isTracking = true;
+    await this.state.storage.put('isTracking', true);
+
+    await this.initialize();
+
+    console.log('▶️ Tracking started');
+    this.broadcast({ type: 'tracking_status', data: { isTracking: true } });
+
+    return { success: true, message: 'Tracking started' };
+  }
+
+  async stopTracking() {
+    if (!this.isTracking) {
+      console.log('⚠️ Tracking already stopped');
+      return { success: false, message: 'Tracking already stopped' };
+    }
+
+    this.isTracking = false;
+    await this.state.storage.put('isTracking', false);
+
+    // Close WebSocket connections
+    if (this.lighterWs) {
+      this.lighterWs.close();
+      this.lighterWs = null;
+    }
+    if (this.paradexWs) {
+      this.paradexWs.close();
+      this.paradexWs = null;
+    }
+
+    // Stop intervals
+    this.stopLighterPing();
+    this.stopParadexPing();
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+
+    console.log('⏸️ Tracking stopped');
+    this.broadcast({ type: 'tracking_status', data: { isTracking: false } });
+
+    return { success: true, message: 'Tracking stopped' };
   }
 
   // ========== Client WebSocket Handling ==========
@@ -1248,6 +1381,22 @@ export class OrderbookTracker {
       case 'get_markets':
         await this.sendMarkets(websocket);
         break;
+
+      case 'start_tracking':
+        const startResult = await this.startTracking();
+        websocket.send(JSON.stringify({
+          type: 'tracking_control',
+          data: startResult
+        }));
+        break;
+
+      case 'stop_tracking':
+        const stopResult = await this.stopTracking();
+        websocket.send(JSON.stringify({
+          type: 'tracking_control',
+          data: stopResult
+        }));
+        break;
     }
   }
 
@@ -1279,7 +1428,8 @@ export class OrderbookTracker {
           lighter_markets: this.lighterMarkets.size,
           paradex_markets: this.paradexMarkets.size,
           lighter_connected: this.lighterWs?.readyState === WebSocket.OPEN,
-          paradex_connected: this.paradexWs?.readyState === WebSocket.OPEN
+          paradex_connected: this.paradexWs?.readyState === WebSocket.OPEN,
+          is_tracking: this.isTracking
         }
       }));
     } catch (error) {
