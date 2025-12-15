@@ -2,10 +2,18 @@ name = "lighter-price-monitor-v2"
 main = "src/index.ts"
 compatibility_date = "2024-12-15"
 
-# Durable Objects
+# Durable Objects - Multi-DO Architecture
 [[durable_objects.bindings]]
-name = "ORDERBOOK_TRACKER"
-class_name = "OrderbookTracker"
+name = "LIGHTER_TRACKER"
+class_name = "LighterTracker"
+
+[[durable_objects.bindings]]
+name = "PARADEX_TRACKER"
+class_name = "ParadexTracker"
+
+[[durable_objects.bindings]]
+name = "CLEANUP_MANAGER"
+class_name = "CleanupManager"
 
 # D1 Database
 [[d1_databases]]
@@ -15,6 +23,6 @@ database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
 
 # Migrationen
 [[migrations]]
-tag = "v2"
-new_classes = ["OrderbookTracker"]
-deleted_classes = ["PriceMonitor"]
+tag = "v3"
+new_classes = ["LighterTracker", "ParadexTracker", "CleanupManager"]
+deleted_classes = ["OrderbookTracker"]
