@@ -710,6 +710,9 @@ export class OrderbookTracker {
   private lighterReconnectTimeout: any = null;
   private paradexReconnectTimeout: any = null;
 
+  // Cleanup interval for old data
+  private cleanupInterval: any = null;
+
   // Token mappings cache
   private tokenMappings: Map<string, TokenMapping> = new Map();
 
@@ -757,42 +760,41 @@ export class OrderbookTracker {
 
   async discoverAndTrackMarkets() {
     try {
-      // Discover Lighter markets (LIMIT to save memory)
+      // Discover ALL Lighter markets
       const lighterResponse = await fetch('https://mainnet.zklighter.elliot.ai/api/v1/orderBooks');
       const lighterData = await lighterResponse.json();
 
       if (lighterData.code === 200 && lighterData.order_books) {
-        // Only track first 10 markets to save memory
-        let count = 0;
+        // Track ALL active markets
         for (const market of lighterData.order_books) {
-          if (market.status === 'active' && count < 10) {
+          if (market.status === 'active') {
             this.lighterMarkets.add(market.market_id);
             await this.ensureTokenMapping('lighter', market.market_id, market.symbol);
-            count++;
           }
         }
-        console.log(`Tracking ${this.lighterMarkets.size} Lighter markets (limited for memory)`);
+        console.log(`Tracking ${this.lighterMarkets.size} Lighter markets (ALL active markets)`);
       }
 
-      // Discover Paradex markets (LIMIT to save memory)
+      // Discover ALL Paradex markets
       const paradexResponse = await fetch('https://api.prod.paradex.trade/v1/markets');
       const paradexData = await paradexResponse.json();
 
       if (paradexData.results) {
-        // Only track top 15 markets by volume to save memory
-        const topMarkets = paradexData.results
-          .filter((m: any) => m.market_type === 'PERP')
-          .slice(0, 15);
+        // Track ALL PERP markets
+        const perpMarkets = paradexData.results.filter((m: any) => m.market_type === 'PERP');
 
-        for (const market of topMarkets) {
+        for (const market of perpMarkets) {
           this.paradexMarkets.add(market.symbol);
 
           // Extract normalized symbol (e.g., ETH-USD-PERP -> ETH)
           const baseAsset = market.symbol.split('-')[0];
           await this.ensureTokenMapping('paradex', market.symbol, baseAsset);
         }
-        console.log(`Tracking ${this.paradexMarkets.size} Paradex markets (limited for memory)`);
+        console.log(`Tracking ${this.paradexMarkets.size} Paradex markets (ALL PERP markets)`);
       }
+
+      // Start periodic cleanup (every 30 minutes)
+      this.startPeriodicCleanup();
     } catch (error) {
       console.error('Error discovering markets:', error);
     }
@@ -933,9 +935,9 @@ export class OrderbookTracker {
       const { asks, bids, offset, nonce } = order_book;
       const normalizedSymbol = this.getNormalizedSymbol('lighter', marketId);
 
-      // Limit to 10 asks and 10 bids to save memory
-      const limitedAsks = asks?.slice(0, 10) || [];
-      const limitedBids = bids?.slice(0, 10) || [];
+      // Limit to 3 asks and 3 bids (top of book) to save memory
+      const limitedAsks = asks?.slice(0, 3) || [];
+      const limitedBids = bids?.slice(0, 3) || [];
 
       // Batch insert using single statement
       if (limitedAsks.length > 0 || limitedBids.length > 0) {
@@ -1106,8 +1108,8 @@ export class OrderbookTracker {
 
       const normalizedSymbol = this.getNormalizedSymbol('paradex', market);
 
-      // Limit to 15 entries to save memory
-      const limitedInserts = inserts.slice(0, 15);
+      // Limit to 3 entries (top of book) to save memory
+      const limitedInserts = inserts.slice(0, 3);
 
       if (limitedInserts.length > 0) {
         const values: string[] = [];
@@ -1162,6 +1164,38 @@ export class OrderbookTracker {
       }
     } catch (error) {
       console.error('Error saving Paradex trade:', error);
+    }
+  }
+
+  // ========== Data Cleanup ==========
+
+  startPeriodicCleanup() {
+    // Clean up old data every 30 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupOldData();
+    }, 30 * 60 * 1000); // 30 minutes
+
+    // Also run cleanup immediately on start
+    this.cleanupOldData();
+  }
+
+  async cleanupOldData() {
+    try {
+      const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000); // 2 hours
+
+      // Delete old orderbook entries
+      const orderbookResult = await this.env.DB.prepare(
+        `DELETE FROM orderbook_entries WHERE timestamp < ?`
+      ).bind(twoHoursAgo).run();
+
+      // Delete old trades
+      const tradesResult = await this.env.DB.prepare(
+        `DELETE FROM paradex_trades WHERE created_at < ?`
+      ).bind(twoHoursAgo).run();
+
+      console.log(`🧹 Cleanup: Removed ${orderbookResult.meta.changes || 0} old orderbook entries and ${tradesResult.meta.changes || 0} old trades`);
+    } catch (error) {
+      console.error('Error during cleanup:', error);
     }
   }
 
