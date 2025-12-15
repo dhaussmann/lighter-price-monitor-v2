@@ -14,6 +14,7 @@ export class PriceMonitor {
   private env: Env;
   private sessions: Set<WebSocket>;
   private monitoredTokens: Map<string, TokenMonitor>;
+  private orderbookTrackers: Map<string, OrderbookTracker>;  // NEU: Separate Orderbook-Tracker
   private lighterWs: WebSocket | null = null;
   private reconnectTimeout: any = null;
 
@@ -22,9 +23,11 @@ export class PriceMonitor {
     this.env = env;
     this.sessions = new Set();
     this.monitoredTokens = new Map();
-    
-    // Lade gespeicherte Monitore beim Start
+    this.orderbookTrackers = new Map();
+
+    // Lade gespeicherte Monitore und Tracker beim Start
     this.loadMonitorsFromStorage();
+    this.loadOrderbookTrackersFromStorage();
   }
 
   async loadMonitorsFromStorage() {
@@ -32,9 +35,21 @@ export class PriceMonitor {
     for (const [key, monitor] of stored) {
       this.monitoredTokens.set(monitor.tokenId, monitor);
     }
-    
+
     // Starte Lighter-Verbindung wenn Monitore existieren
     if (this.monitoredTokens.size > 0 && !this.lighterWs) {
+      await this.connectToLighter();
+    }
+  }
+
+  async loadOrderbookTrackersFromStorage() {
+    const stored = await this.state.storage.list<OrderbookTracker>({ prefix: 'orderbook:' });
+    for (const [key, tracker] of stored) {
+      this.orderbookTrackers.set(tracker.marketId, tracker);
+    }
+
+    // Starte Lighter-Verbindung wenn Tracker existieren
+    if (this.orderbookTrackers.size > 0 && !this.lighterWs) {
       await this.connectToLighter();
     }
   }
@@ -95,12 +110,14 @@ export class PriceMonitor {
       ws.addEventListener('open', () => {
         console.log('Connected to Lighter WebSocket');
 
-        // Abonniere alle überwachten Token
+        // Abonniere alle überwachten Token (Price Monitoring)
         for (const [tokenId, monitor] of this.monitoredTokens) {
           this.subscribeTicker(tokenId);
-          if (monitor.trackOrderbook) {
-            this.subscribeOrderbook(tokenId);
-          }
+        }
+
+        // Abonniere alle Orderbook-Tracker
+        for (const [marketId, tracker] of this.orderbookTrackers) {
+          this.subscribeOrderbook(marketId);
         }
       });
 
@@ -213,11 +230,9 @@ export class PriceMonitor {
       if (message.channel && message.channel.startsWith('order_book:')) {
         const marketId = message.channel.replace('order_book:', '');
 
-        if (this.monitoredTokens.has(marketId)) {
-          const monitor = this.monitoredTokens.get(marketId);
-          if (monitor?.trackOrderbook) {
-            this.saveOrderbookUpdate(marketId, message);
-          }
+        // Prüfe ob Orderbook-Tracker für diesen Market aktiv ist
+        if (this.orderbookTrackers.has(marketId)) {
+          this.saveOrderbookUpdate(marketId, message);
         }
       }
     } catch (error) {
@@ -296,6 +311,7 @@ export class PriceMonitor {
       if (!order_book) return;
 
       const { asks, bids, offset, nonce } = order_book;
+      let savedCount = 0;
 
       // Speichere Asks
       if (asks && Array.isArray(asks)) {
@@ -307,6 +323,7 @@ export class PriceMonitor {
             `INSERT INTO orderbook_entries (market_id, side, price, size, timestamp, offset, nonce)
              VALUES (?, ?, ?, ?, ?, ?, ?)`
           ).bind(marketId, 'ask', price, size, timestamp, offset, nonce).run();
+          savedCount++;
         }
       }
 
@@ -320,10 +337,19 @@ export class PriceMonitor {
             `INSERT INTO orderbook_entries (market_id, side, price, size, timestamp, offset, nonce)
              VALUES (?, ?, ?, ?, ?, ?, ?)`
           ).bind(marketId, 'bid', price, size, timestamp, offset, nonce).run();
+          savedCount++;
         }
       }
 
-      console.log(`📚 Saved orderbook update for market ${marketId}: ${asks?.length || 0} asks, ${bids?.length || 0} bids`);
+      // Update Tracker Statistiken
+      const tracker = this.orderbookTrackers.get(marketId);
+      if (tracker) {
+        tracker.entryCount += savedCount;
+        tracker.lastUpdate = timestamp;
+        await this.state.storage.put(`orderbook:${marketId}`, tracker);
+      }
+
+      console.log(`📚 Saved orderbook update for market ${marketId}: ${asks?.length || 0} asks, ${bids?.length || 0} bids (total: ${tracker?.entryCount || 0})`);
     } catch (error) {
       console.error('Error saving orderbook to database:', error);
     }
@@ -332,11 +358,23 @@ export class PriceMonitor {
   async handleClientMessage(data: any, websocket: WebSocket) {
     switch (data.type) {
       case 'add_monitor':
-        await this.addMonitor(data.tokenId, data.threshold, data.monitorType, data.trackOrderbook || false);
+        await this.addMonitor(data.tokenId, data.threshold, data.monitorType);
         break;
 
       case 'remove_monitor':
         await this.removeMonitor(data.tokenId);
+        break;
+
+      case 'add_orderbook_tracker':
+        await this.addOrderbookTracker(data.marketId);
+        break;
+
+      case 'remove_orderbook_tracker':
+        await this.removeOrderbookTracker(data.marketId);
+        break;
+
+      case 'get_orderbook_stats':
+        await this.sendOrderbookStats(websocket, data.marketId);
         break;
 
       case 'get_state':
@@ -357,7 +395,7 @@ export class PriceMonitor {
     }
   }
 
-  async addMonitor(tokenId: string, threshold: number, type: 'above' | 'below', trackOrderbook: boolean = false) {
+  async addMonitor(tokenId: string, threshold: number, type: 'above' | 'below') {
     const monitor: TokenMonitor = {
       tokenId,
       threshold,
@@ -365,8 +403,7 @@ export class PriceMonitor {
       lastPrice: null,
       lastUpdate: null,
       createdAt: Date.now(),
-      enabled: true,
-      trackOrderbook
+      enabled: true
     };
 
     this.monitoredTokens.set(tokenId, monitor);
@@ -380,9 +417,6 @@ export class PriceMonitor {
     } else {
       // Abonniere Token
       this.subscribeTicker(tokenId);
-      if (trackOrderbook) {
-        this.subscribeOrderbook(tokenId);
-      }
     }
 
     // Benachrichtige alle Clients
@@ -393,19 +427,12 @@ export class PriceMonitor {
   }
 
   async removeMonitor(tokenId: string) {
-    const monitor = this.monitoredTokens.get(tokenId);
-
     this.monitoredTokens.delete(tokenId);
     await this.state.storage.delete(`monitor:${tokenId}`);
     this.unsubscribeTicker(tokenId);
 
-    // Unsubscribe Orderbook falls aktiv
-    if (monitor?.trackOrderbook) {
-      this.unsubscribeOrderbook(tokenId);
-    }
-
-    // Wenn keine Monitore mehr: Lighter-Verbindung schließen
-    if (this.monitoredTokens.size === 0) {
+    // Wenn keine Monitore und Tracker mehr: Lighter-Verbindung schließen
+    if (this.monitoredTokens.size === 0 && this.orderbookTrackers.size === 0) {
       this.disconnectFromLighter();
     }
 
@@ -415,15 +442,124 @@ export class PriceMonitor {
     });
   }
 
+  async addOrderbookTracker(marketId: string) {
+    const tracker: OrderbookTracker = {
+      marketId,
+      createdAt: Date.now(),
+      entryCount: 0,
+      lastUpdate: null
+    };
+
+    this.orderbookTrackers.set(marketId, tracker);
+
+    // Persistent speichern
+    await this.state.storage.put(`orderbook:${marketId}`, tracker);
+
+    // Lighter-Verbindung starten falls noch nicht aktiv
+    if (!this.lighterWs) {
+      await this.connectToLighter();
+    } else {
+      // Abonniere Orderbook
+      this.subscribeOrderbook(marketId);
+    }
+
+    // Benachrichtige alle Clients
+    this.broadcast({
+      type: 'orderbook_tracker_added',
+      data: tracker
+    });
+  }
+
+  async removeOrderbookTracker(marketId: string) {
+    this.orderbookTrackers.delete(marketId);
+    await this.state.storage.delete(`orderbook:${marketId}`);
+    this.unsubscribeOrderbook(marketId);
+
+    // Wenn keine Monitore und Tracker mehr: Lighter-Verbindung schließen
+    if (this.monitoredTokens.size === 0 && this.orderbookTrackers.size === 0) {
+      this.disconnectFromLighter();
+    }
+
+    this.broadcast({
+      type: 'orderbook_tracker_removed',
+      data: { marketId }
+    });
+  }
+
   async sendCurrentState(websocket: WebSocket) {
     const monitors = Array.from(this.monitoredTokens.values());
+    const orderbookTrackers = Array.from(this.orderbookTrackers.values());
+
+    // Lade Statistiken für alle Tracker
+    const trackersWithStats = await Promise.all(
+      orderbookTrackers.map(async (tracker) => {
+        const stats = await this.getOrderbookStatsForMarket(tracker.marketId);
+        return { ...tracker, ...stats };
+      })
+    );
+
     websocket.send(JSON.stringify({
       type: 'current_state',
       data: {
         monitors,
+        orderbookTrackers: trackersWithStats,
         connected: this.lighterWs?.readyState === WebSocket.OPEN
       }
     }));
+  }
+
+  async sendOrderbookStats(websocket: WebSocket, marketId?: string) {
+    if (marketId) {
+      const stats = await this.getOrderbookStatsForMarket(marketId);
+      websocket.send(JSON.stringify({
+        type: 'orderbook_stats',
+        data: { marketId, ...stats }
+      }));
+    } else {
+      // Stats für alle Tracker
+      const allStats = await Promise.all(
+        Array.from(this.orderbookTrackers.keys()).map(async (id) => ({
+          marketId: id,
+          ...(await this.getOrderbookStatsForMarket(id))
+        }))
+      );
+      websocket.send(JSON.stringify({
+        type: 'orderbook_stats',
+        data: allStats
+      }));
+    }
+  }
+
+  async getOrderbookStatsForMarket(marketId: string) {
+    try {
+      const result = await this.env.DB.prepare(
+        `SELECT
+          COUNT(*) as total_entries,
+          COUNT(CASE WHEN side = 'ask' THEN 1 END) as asks_count,
+          COUNT(CASE WHEN side = 'bid' THEN 1 END) as bids_count,
+          MAX(timestamp) as last_update,
+          MIN(timestamp) as first_entry
+         FROM orderbook_entries
+         WHERE market_id = ?`
+      ).bind(marketId).first();
+
+      return {
+        entryCount: result?.total_entries || 0,
+        asksCount: result?.asks_count || 0,
+        bidsCount: result?.bids_count || 0,
+        lastUpdate: result?.last_update || null,
+        firstEntry: result?.first_entry || null
+      };
+    } catch (error) {
+      console.error('Error getting orderbook stats:', error);
+      return {
+        entryCount: 0,
+        asksCount: 0,
+        bidsCount: 0,
+        lastUpdate: null,
+        firstEntry: null
+      };
+    }
   }
 
   async sendAlertHistory(websocket: WebSocket, limit: number = 100) {
@@ -538,7 +674,13 @@ interface TokenMonitor {
   lastUpdate: number | null;
   createdAt: number;
   enabled: boolean;
-  trackOrderbook: boolean;  // NEU: Orderbook-Tracking aktiviert?
+}
+
+interface OrderbookTracker {
+  marketId: string;
+  createdAt: number;
+  entryCount: number;
+  lastUpdate: number | null;
 }
 
 interface PriceAlert {
