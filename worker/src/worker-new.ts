@@ -546,7 +546,7 @@ const LIGHTER_DASHBOARD = `<!DOCTYPE html>
 // Frontend HTML - Paradex
 //=====================================
 
-const PARADEX_DASHBOARD = \`<!DOCTYPE html>
+const PARADEX_DASHBOARD = `<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -820,13 +820,13 @@ const PARADEX_DASHBOARD = \`<!DOCTYPE html>
     connect();
   </script>
 </body>
-</html>\`;
+</html>`;
 
 //=====================================
 // Overview Page
 //=====================================
 
-const OVERVIEW_HTML = \`<!DOCTYPE html>
+const OVERVIEW_HTML = `<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -1018,4 +1018,4 @@ const OVERVIEW_HTML = \`<!DOCTYPE html>
     setInterval(loadStats, 10000); // Refresh every 10s
   </script>
 </body>
-</html>\`;
+</html>`;
