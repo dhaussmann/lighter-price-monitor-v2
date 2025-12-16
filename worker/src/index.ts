@@ -41,19 +41,24 @@ export class CleanupManager {
 
   async cleanupOldData() {
     try {
-      const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
+      const oneHourAgo = Date.now() - (60 * 60 * 1000);
 
-      // Delete old orderbook entries
-      const orderbookResult = await this.env.DB.prepare(
-        `DELETE FROM orderbook_entries WHERE timestamp < ?`
-      ).bind(thirtyMinutesAgo).run();
+      // Delete old minute aggregations (>1h)
+      const minutesResult = await this.env.DB.prepare(
+        `DELETE FROM orderbook_minutes WHERE timestamp < ?`
+      ).bind(oneHourAgo).run();
 
-      // Delete old trades
+      // Delete old snapshots (>1h, should already be cleaned by aggregator)
+      const snapshotsResult = await this.env.DB.prepare(
+        `DELETE FROM orderbook_snapshots WHERE timestamp < ?`
+      ).bind(oneHourAgo).run();
+
+      // Delete old trades (>1h)
       const tradesResult = await this.env.DB.prepare(
         `DELETE FROM paradex_trades WHERE created_at < ?`
-      ).bind(thirtyMinutesAgo).run();
+      ).bind(oneHourAgo).run();
 
-      console.log(`[Cleanup] 🧹 Removed ${orderbookResult.meta.changes || 0} orderbook entries, ${tradesResult.meta.changes || 0} trades (>30min)`);
+      console.log(`[Cleanup] 🧹 Removed ${minutesResult.meta.changes || 0} minute aggregations, ${snapshotsResult.meta.changes || 0} snapshots, ${tradesResult.meta.changes || 0} trades (>1h)`);
     } catch (error) {
       console.error('[Cleanup] Error:', error);
     }

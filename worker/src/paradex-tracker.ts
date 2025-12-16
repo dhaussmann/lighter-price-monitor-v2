@@ -3,6 +3,8 @@
  * Handles only Paradex WebSocket connection and data storage
  */
 
+import { OrderBookAggregator } from './aggregator';
+
 export interface Env {
   DB: D1Database;
 }
@@ -24,6 +26,9 @@ export class ParadexTracker {
   // Tracking state
   private isTracking: boolean = false;
 
+  // Aggregator for memory-efficient data storage
+  private aggregator: OrderBookAggregator | null = null;
+
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
@@ -40,6 +45,9 @@ export class ParadexTracker {
   }
 
   async initialize() {
+    // Initialisiere Aggregator
+    this.aggregator = new OrderBookAggregator(this.env.DB, 'paradex');
+
     await this.loadTokenMappings();
     await this.discoverMarkets();
     await this.connect();
@@ -265,36 +273,34 @@ export class ParadexTracker {
 
   async saveOrderbookUpdate(data: any) {
     try {
-      const { market, inserts, seq_no, last_updated_at } = data;
+      const { market, inserts } = data;
       if (!inserts || !Array.isArray(inserts)) return;
 
       const normalizedSymbol = this.getNormalizedSymbol(market);
 
-      // Best price only (1 entry)
-      const limitedInserts = inserts.slice(0, 1);
+      // Extrahiere beste Bid/Ask Preise
+      let bestBid: number | null = null;
+      let bestAsk: number | null = null;
 
-      if (limitedInserts.length > 0) {
-        const values: string[] = [];
-        const bindings: any[] = [];
-
-        for (const entry of limitedInserts) {
-          const side = entry.side === 'BUY' ? 'bid' : 'ask';
-          values.push('(?, ?, ?, ?, ?, ?, ?, ?)');
-          bindings.push(
-            'paradex', market, normalizedSymbol, side,
-            parseFloat(entry.price), parseFloat(entry.size),
-            last_updated_at, seq_no
-          );
+      for (const entry of inserts) {
+        const price = parseFloat(entry.price);
+        if (entry.side === 'BUY') {
+          if (bestBid === null || price > bestBid) {
+            bestBid = price;
+          }
+        } else if (entry.side === 'SELL') {
+          if (bestAsk === null || price < bestAsk) {
+            bestAsk = price;
+          }
         }
+      }
 
-        const query = `INSERT INTO orderbook_entries
-          (source, market_id, normalized_symbol, side, price, size, timestamp, seq_no)
-          VALUES ${values.join(', ')}`;
-
-        await this.env.DB.prepare(query).bind(...bindings).run();
+      // Aggregiere statt direkt zu schreiben
+      if (this.aggregator && (bestBid !== null || bestAsk !== null)) {
+        this.aggregator.processUpdate(normalizedSymbol, bestBid, bestAsk);
       }
     } catch (error) {
-      console.error('[Paradex] Error saving orderbook:', error);
+      console.error('[Paradex] Error processing orderbook:', error);
     }
   }
 
@@ -368,6 +374,14 @@ export class ParadexTracker {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+    }
+
+    // Flush aggregator before stopping
+    if (this.aggregator) {
+      console.log('[Paradex] 💾 Flushing aggregator before stop...');
+      await this.aggregator.forceFlush();
+      this.aggregator.stopFlushTimer();
+      this.aggregator = null;
     }
 
     // Close WebSocket
