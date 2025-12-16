@@ -106,9 +106,9 @@ export class ParadexTracker {
 
       console.log(`[Paradex] 📋 Received ${data.results.length} markets from API`);
 
-      // Nur PERP markets, keine OPTIONS
+      // Nur PERP markets (keine PERP_OPTION)
       const perpMarkets = data.results.filter((m: any) =>
-        m.market_type === 'PERP' && !m.symbol.includes('OPTION')
+        m.asset_kind === 'PERP'
       );
 
       console.log(`[Paradex] 📊 Filtered ${perpMarkets.length} PERP markets`);
@@ -127,7 +127,7 @@ export class ParadexTracker {
         return this.env.DB.prepare(
           `INSERT OR REPLACE INTO paradex_markets (symbol, market_type, base_asset, quote_asset, last_updated)
            VALUES (?, ?, ?, ?, ?)`
-        ).bind(m.symbol, m.market_type, baseAsset, quoteAsset, Date.now());
+        ).bind(m.symbol, m.asset_kind, baseAsset, quoteAsset, Date.now());
       });
 
       // Batch insert (max 50)
