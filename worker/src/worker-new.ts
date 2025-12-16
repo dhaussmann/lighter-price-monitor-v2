@@ -210,6 +210,163 @@ export default {
     }
 
     //=====================================
+    // Paradex API Endpoints
+    //=====================================
+
+    // GET /api/paradex/stats - Paradex Statistics
+    if (url.pathname === '/api/paradex/stats') {
+      try {
+        const id = env.PARADEX_TRACKER.idFromName('paradex-tracker');
+        const tracker = env.PARADEX_TRACKER.get(id);
+        const response = await tracker.fetch(request);
+        return response;
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Failed to fetch stats' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/paradex/markets - All Paradex Markets
+    if (url.pathname === '/api/paradex/markets') {
+      try {
+        const result = await env.DB.prepare(
+          `SELECT * FROM paradex_markets WHERE active = 1 ORDER BY symbol`
+        ).all();
+
+        return new Response(JSON.stringify({
+          markets: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/paradex/snapshots?symbol=BTC&limit=100
+    if (url.pathname === '/api/paradex/snapshots') {
+      try {
+        const symbol = url.searchParams.get('symbol');
+        const limit = parseInt(url.searchParams.get('limit') || '100');
+        const offset = parseInt(url.searchParams.get('offset') || '0');
+
+        let query = 'SELECT * FROM paradex_snapshots';
+        const params: any[] = [];
+
+        if (symbol) {
+          query += ' WHERE symbol = ?';
+          params.push(symbol);
+        }
+
+        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const result = await env.DB.prepare(query).bind(...params).all();
+
+        return new Response(JSON.stringify({
+          symbol: symbol || 'all',
+          data: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/paradex/minutes?symbol=BTC&limit=60
+    if (url.pathname === '/api/paradex/minutes') {
+      try {
+        const symbol = url.searchParams.get('symbol');
+        const limit = parseInt(url.searchParams.get('limit') || '60');
+        const offset = parseInt(url.searchParams.get('offset') || '0');
+        const from = url.searchParams.get('from'); // timestamp
+        const to = url.searchParams.get('to');
+
+        let query = 'SELECT * FROM paradex_minutes';
+        const params: any[] = [];
+        const conditions: string[] = [];
+
+        if (symbol) {
+          conditions.push('symbol = ?');
+          params.push(symbol);
+        }
+
+        if (from) {
+          conditions.push('timestamp >= ?');
+          params.push(parseInt(from));
+        }
+
+        if (to) {
+          conditions.push('timestamp <= ?');
+          params.push(parseInt(to));
+        }
+
+        if (conditions.length > 0) {
+          query += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const result = await env.DB.prepare(query).bind(...params).all();
+
+        return new Response(JSON.stringify({
+          symbol: symbol || 'all',
+          data: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/paradex/overview - Paradex Data Overview
+    if (url.pathname === '/api/paradex/overview') {
+      try {
+        const symbolStats = await env.DB.prepare(`
+          SELECT symbol,
+                 COUNT(*) as total_minutes,
+                 MIN(timestamp) as first_minute,
+                 MAX(timestamp) as last_minute,
+                 AVG(avg_bid) as overall_avg_bid,
+                 AVG(avg_ask) as overall_avg_ask,
+                 SUM(tick_count) as total_ticks
+          FROM paradex_minutes
+          GROUP BY symbol
+          ORDER BY symbol
+        `).all();
+
+        return new Response(JSON.stringify({
+          symbols: symbolStats.results || [],
+          count: symbolStats.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    //=====================================
     // Frontend
     //=====================================
 
