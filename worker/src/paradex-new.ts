@@ -106,9 +106,10 @@ export class ParadexTracker {
 
       console.log(`[Paradex] 📋 Received ${data.results.length} markets from API`);
 
-      // Nur PERP markets (keine PERP_OPTION)
+      // Nur echte Perpetual Futures: asset_kind = 'PERP' UND Symbol endet mit '-PERP'
+      // Filtert PERP_OPTION (wie BTC-USD-110000-P) aus
       const perpMarkets = data.results.filter((m: any) =>
-        m.asset_kind === 'PERP'
+        m.asset_kind === 'PERP' && m.symbol.endsWith('-PERP')
       );
 
       console.log(`[Paradex] 📊 Filtered ${perpMarkets.length} PERP markets`);
