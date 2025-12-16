@@ -5,6 +5,7 @@
 
 import { LighterTracker } from './lighter-new';
 import { ParadexTracker } from './paradex-new';
+import { ArbitrageCalculator } from './arbitrage';
 
 export { LighterTracker, ParadexTracker };
 
@@ -47,11 +48,11 @@ export default {
     }
 
     //=====================================
-    // API Endpoints
+    // Lighter API Endpoints
     //=====================================
 
-    // GET /api/stats - Tracking Statistics
-    if (url.pathname === '/api/stats') {
+    // GET /api/lighter/stats - Lighter Statistics
+    if (url.pathname === '/api/lighter/stats' || url.pathname === '/api/stats') {
       try {
         const id = env.LIGHTER_TRACKER.idFromName('lighter-tracker');
         const tracker = env.LIGHTER_TRACKER.get(id);
@@ -71,8 +72,8 @@ export default {
       }
     }
 
-    // GET /api/markets - All Markets
-    if (url.pathname === '/api/markets') {
+    // GET /api/lighter/markets - All Lighter Markets
+    if (url.pathname === '/api/lighter/markets' || url.pathname === '/api/markets') {
       try {
         const result = await env.DB.prepare(
           `SELECT * FROM lighter_markets WHERE active = 1 ORDER BY symbol`
@@ -92,8 +93,8 @@ export default {
       }
     }
 
-    // GET /api/snapshots?symbol=ETH&limit=100
-    if (url.pathname === '/api/snapshots') {
+    // GET /api/lighter/snapshots?symbol=ETH&limit=100
+    if (url.pathname === '/api/lighter/snapshots' || url.pathname === '/api/snapshots') {
       try {
         const symbol = url.searchParams.get('symbol');
         const limit = parseInt(url.searchParams.get('limit') || '100');
@@ -127,8 +128,8 @@ export default {
       }
     }
 
-    // GET /api/minutes?symbol=ETH&limit=60
-    if (url.pathname === '/api/minutes') {
+    // GET /api/lighter/minutes?symbol=ETH&limit=60
+    if (url.pathname === '/api/lighter/minutes' || url.pathname === '/api/minutes') {
       try {
         const symbol = url.searchParams.get('symbol');
         const limit = parseInt(url.searchParams.get('limit') || '60');
@@ -179,8 +180,8 @@ export default {
       }
     }
 
-    // GET /api/overview - Data Overview
-    if (url.pathname === '/api/overview') {
+    // GET /api/lighter/overview - Lighter Data Overview
+    if (url.pathname === '/api/lighter/overview' || url.pathname === '/api/overview') {
       try {
         const symbolStats = await env.DB.prepare(`
           SELECT symbol,
@@ -360,6 +361,124 @@ export default {
         });
       } catch (error) {
         return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    //=====================================
+    // Arbitrage API Endpoints
+    //=====================================
+
+    // GET /api/arbitrage - Calculate arbitrage opportunities
+    // Query params:
+    //   - symbol: Filter by symbol (e.g., 'BTC', 'ETH')
+    //   - exchanges: Comma-separated list (default: 'lighter,paradex')
+    //   - minProfit: Minimum profit percentage (default: 0)
+    //   - useMinutes: Use minute data instead of snapshots (default: false)
+    if (url.pathname === '/api/arbitrage') {
+      try {
+        const calculator = new ArbitrageCalculator(env.DB);
+
+        const symbol = url.searchParams.get('symbol') || undefined;
+        const exchangesParam = url.searchParams.get('exchanges') || 'lighter,paradex';
+        const exchanges = exchangesParam.split(',').map(e => e.trim());
+        const minProfit = parseFloat(url.searchParams.get('minProfit') || '0');
+        const useMinutes = url.searchParams.get('useMinutes') === 'true';
+
+        const opportunities = await calculator.calculate(
+          exchanges,
+          symbol,
+          minProfit,
+          useMinutes
+        );
+
+        return new Response(JSON.stringify({
+          opportunities,
+          count: opportunities.length,
+          filters: {
+            symbol: symbol || 'all',
+            exchanges,
+            minProfit,
+            source: useMinutes ? 'minutes' : 'snapshots'
+          },
+          timestamp: Date.now()
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      } catch (error: any) {
+        return new Response(JSON.stringify({
+          error: error.message || 'Failed to calculate arbitrage'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/arbitrage/history - Historical arbitrage opportunities
+    // Query params:
+    //   - symbol: Symbol to analyze (required)
+    //   - exchanges: Comma-separated list (default: 'lighter,paradex')
+    //   - from: Start timestamp (required)
+    //   - to: End timestamp (required)
+    //   - interval: 'snapshots' or 'minutes' (default: 'minutes')
+    if (url.pathname === '/api/arbitrage/history') {
+      try {
+        const symbol = url.searchParams.get('symbol');
+        if (!symbol) {
+          return new Response(JSON.stringify({
+            error: 'Parameter "symbol" is required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const from = url.searchParams.get('from');
+        const to = url.searchParams.get('to');
+        if (!from || !to) {
+          return new Response(JSON.stringify({
+            error: 'Parameters "from" and "to" timestamps are required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const calculator = new ArbitrageCalculator(env.DB);
+        const exchangesParam = url.searchParams.get('exchanges') || 'lighter,paradex';
+        const exchanges = exchangesParam.split(',').map(e => e.trim());
+        const interval = (url.searchParams.get('interval') || 'minutes') as 'snapshots' | 'minutes';
+
+        const opportunities = await calculator.getHistoricalArbitrage(
+          exchanges,
+          symbol,
+          parseInt(from),
+          parseInt(to),
+          interval
+        );
+
+        return new Response(JSON.stringify({
+          opportunities,
+          count: opportunities.length,
+          filters: {
+            symbol,
+            exchanges,
+            from: parseInt(from),
+            to: parseInt(to),
+            interval
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      } catch (error: any) {
+        return new Response(JSON.stringify({
+          error: error.message || 'Failed to get historical arbitrage'
+        }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
