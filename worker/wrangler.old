@@ -1,0 +1,19 @@
+name = "lighter-orderbook-tracker"
+main = "src/worker-new.ts"
+compatibility_date = "2024-12-15"
+
+# Durable Object
+[[durable_objects.bindings]]
+name = "LIGHTER_TRACKER"
+class_name = "LighterTracker"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "orderbook-data"
+database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
+
+# Migration
+[[migrations]]
+tag = "v4-clean"
+new_classes = ["LighterTracker"]
