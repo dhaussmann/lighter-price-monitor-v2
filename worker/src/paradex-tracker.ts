@@ -64,7 +64,13 @@ export class ParadexTracker {
 
   async discoverMarkets() {
     try {
+      console.log('[Paradex] 🔍 Discovering markets...');
       const response = await fetch('https://api.prod.paradex.trade/v1/markets');
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}: ${response.statusText}`);
+      }
+
       const data = await response.json();
 
       if (data.results) {
@@ -73,7 +79,7 @@ export class ParadexTracker {
           m.market_type === 'PERP' && !m.symbol.includes('OPTION')
         );
 
-        console.log(`[Paradex] Found ${perpMarkets.length} PERP markets`);
+        console.log(`[Paradex] ✅ Found ${perpMarkets.length} PERP markets`);
 
         for (const market of perpMarkets) {
           this.markets.add(market.symbol);
@@ -81,10 +87,18 @@ export class ParadexTracker {
           const baseAsset = market.symbol.split('-')[0];
           await this.ensureTokenMapping(market.symbol, baseAsset);
         }
-        console.log(`[Paradex] Tracking ${this.markets.size} markets`);
+        console.log(`[Paradex] 📚 Tracking ${this.markets.size} markets total`);
+      } else {
+        console.error('[Paradex] ❌ No results in API response');
+        throw new Error('No markets found in API response');
       }
     } catch (error) {
-      console.error('[Paradex] Error discovering markets:', error);
+      console.error('[Paradex] ❌ Error discovering markets:', error);
+      this.broadcast({
+        type: 'error',
+        data: { exchange: 'paradex', message: 'Failed to discover markets' }
+      });
+      throw error; // Re-throw to stop initialization
     }
   }
 
@@ -125,10 +139,12 @@ export class ParadexTracker {
 
   async connect() {
     try {
+      console.log('[Paradex] 🔄 Connecting to WebSocket...');
       const ws = new WebSocket('wss://ws.api.prod.paradex.trade/v1');
 
       ws.addEventListener('open', () => {
-        console.log('[Paradex] ✅ Connected');
+        console.log('[Paradex] ✅ Connected to WebSocket');
+        console.log(`[Paradex] 📊 Subscribing to ${this.markets.size} markets`);
 
         for (const market of this.markets) {
           this.subscribeOrderbook(market);
@@ -141,23 +157,37 @@ export class ParadexTracker {
         this.handleMessage(event.data);
       });
 
-      ws.addEventListener('close', () => {
-        console.log('[Paradex] ❌ Disconnected');
+      ws.addEventListener('close', (event) => {
+        console.log(`[Paradex] ❌ Disconnected (code: ${event.code}, reason: ${event.reason})`);
         this.ws = null;
         this.stopPing();
 
-        this.reconnectTimeout = setTimeout(() => {
-          this.connect();
-        }, 5000);
+        // Only reconnect if still tracking
+        if (this.isTracking) {
+          console.log('[Paradex] 🔄 Reconnecting in 5 seconds...');
+          this.reconnectTimeout = setTimeout(() => {
+            this.connect();
+          }, 5000);
+        } else {
+          console.log('[Paradex] ⏸️ Not reconnecting (tracking stopped)');
+        }
       });
 
       ws.addEventListener('error', (error: any) => {
-        console.error('[Paradex] WebSocket error:', error);
+        console.error('[Paradex] ❌ WebSocket error:', error);
+        this.broadcast({
+          type: 'error',
+          data: { exchange: 'paradex', message: 'WebSocket connection error' }
+        });
       });
 
       this.ws = ws;
     } catch (error) {
-      console.error('[Paradex] Failed to connect:', error);
+      console.error('[Paradex] ❌ Failed to connect:', error);
+      this.broadcast({
+        type: 'error',
+        data: { exchange: 'paradex', message: 'Failed to initialize connection' }
+      });
     }
   }
 
@@ -301,14 +331,29 @@ export class ParadexTracker {
       return { success: false, message: 'Already tracking' };
     }
 
-    this.isTracking = true;
-    await this.state.storage.put('isTracking', true);
-    await this.initialize();
+    try {
+      this.isTracking = true;
+      await this.state.storage.put('isTracking', true);
 
-    console.log('[Paradex] ▶️ Started tracking');
-    this.broadcast({ type: 'tracking_status', data: { exchange: 'paradex', isTracking: true } });
+      console.log('[Paradex] ▶️ Starting tracking...');
+      await this.initialize();
 
-    return { success: true, message: 'Paradex tracking started' };
+      console.log('[Paradex] ✅ Tracking started successfully');
+      this.broadcast({ type: 'tracking_status', data: { exchange: 'paradex', isTracking: true } });
+
+      return { success: true, message: 'Paradex tracking started' };
+    } catch (error) {
+      console.error('[Paradex] ❌ Failed to start tracking:', error);
+      this.isTracking = false;
+      await this.state.storage.put('isTracking', false);
+
+      this.broadcast({
+        type: 'error',
+        data: { exchange: 'paradex', message: 'Failed to start tracking: ' + (error as Error).message }
+      });
+
+      return { success: false, message: 'Failed to start tracking: ' + (error as Error).message };
+    }
   }
 
   async stopTracking() {
@@ -319,10 +364,18 @@ export class ParadexTracker {
     this.isTracking = false;
     await this.state.storage.put('isTracking', false);
 
+    // Clear reconnect timeout
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    // Close WebSocket
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+
     this.stopPing();
 
     console.log('[Paradex] ⏸️ Stopped tracking');
