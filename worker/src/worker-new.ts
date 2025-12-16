@@ -396,7 +396,8 @@ const FRONTEND_HTML = `<!DOCTYPE html>
       ws = new WebSocket(WS_URL + window.location.host + '/ws');
 
       ws.onopen = () => {
-        log('✅ Connected');
+        log('✅ Connected to Dashboard');
+        dashboardConnected = true;
         ws.send(JSON.stringify({ type: 'get_stats' }));
         startStatsInterval();
       };
@@ -407,7 +408,8 @@ const FRONTEND_HTML = `<!DOCTYPE html>
       };
 
       ws.onclose = () => {
-        log('❌ Disconnected');
+        log('❌ Disconnected from Dashboard');
+        dashboardConnected = false;
         updateStatus(false, false);
         reconnectTimeout = setTimeout(connect, 5000);
       };
@@ -447,7 +449,9 @@ const FRONTEND_HTML = `<!DOCTYPE html>
     }
 
     // Update status
-    function updateStatus(isTracking, isConnected) {
+    let dashboardConnected = false;
+
+    function updateStatus(isTracking, lighterConnected) {
       const statusEl = document.getElementById('status');
       const startBtn = document.getElementById('startBtn');
       const stopBtn = document.getElementById('stopBtn');
@@ -458,9 +462,14 @@ const FRONTEND_HTML = `<!DOCTYPE html>
         startBtn.disabled = true;
         stopBtn.disabled = false;
       } else {
-        statusEl.textContent = isConnected ? '🔴 STOPPED' : '⚠️ DISCONNECTED';
+        if (lighterConnected) {
+          statusEl.textContent = '🟢 READY';
+        } else {
+          statusEl.textContent = dashboardConnected ? '🔴 STOPPED' : '⚠️ DISCONNECTED';
+        }
         statusEl.className = 'status stopped';
-        startBtn.disabled = !isConnected;
+        // Button ist enabled wenn Dashboard verbunden ist (nicht Lighter!)
+        startBtn.disabled = !dashboardConnected;
         stopBtn.disabled = true;
       }
     }
