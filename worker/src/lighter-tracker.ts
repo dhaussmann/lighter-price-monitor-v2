@@ -3,6 +3,8 @@
  * Handles only Lighter WebSocket connection and data storage
  */
 
+import { OrderBookAggregator } from './aggregator';
+
 export interface Env {
   DB: D1Database;
 }
@@ -24,6 +26,9 @@ export class LighterTracker {
   // Tracking state
   private isTracking: boolean = false;
 
+  // Aggregator for memory-efficient data storage
+  private aggregator: OrderBookAggregator | null = null;
+
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
@@ -40,6 +45,9 @@ export class LighterTracker {
   }
 
   async initialize() {
+    // Initialisiere Aggregator
+    this.aggregator = new OrderBookAggregator(this.env.DB, 'lighter');
+
     await this.loadTokenMappings();
     await this.discoverMarkets();
     await this.connect();
@@ -228,46 +236,22 @@ export class LighterTracker {
 
   async saveOrderbookUpdate(marketId: string, message: any) {
     try {
-      const { order_book, timestamp } = message;
+      const { order_book } = message;
       if (!order_book) return;
 
-      const { asks, bids, offset, nonce } = order_book;
+      const { asks, bids } = order_book;
       const normalizedSymbol = this.getNormalizedSymbol(marketId);
 
-      // Best price only (1 ask, 1 bid)
-      const limitedAsks = asks?.slice(0, 1) || [];
-      const limitedBids = bids?.slice(0, 1) || [];
+      // Extrahiere beste Preise
+      const bestBid = bids && bids.length > 0 ? parseFloat(bids[0].price) : null;
+      const bestAsk = asks && asks.length > 0 ? parseFloat(asks[0].price) : null;
 
-      if (limitedAsks.length > 0 || limitedBids.length > 0) {
-        const values: string[] = [];
-        const bindings: any[] = [];
-
-        for (const ask of limitedAsks) {
-          values.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
-          bindings.push(
-            'lighter', marketId, normalizedSymbol, 'ask',
-            parseFloat(ask.price), parseFloat(ask.size),
-            timestamp, offset, nonce
-          );
-        }
-
-        for (const bid of limitedBids) {
-          values.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
-          bindings.push(
-            'lighter', marketId, normalizedSymbol, 'bid',
-            parseFloat(bid.price), parseFloat(bid.size),
-            timestamp, offset, nonce
-          );
-        }
-
-        const query = `INSERT INTO orderbook_entries
-          (source, market_id, normalized_symbol, side, price, size, timestamp, offset, nonce)
-          VALUES ${values.join(', ')}`;
-
-        await this.env.DB.prepare(query).bind(...bindings).run();
+      // Aggregiere statt direkt zu schreiben
+      if (this.aggregator && (bestBid !== null || bestAsk !== null)) {
+        this.aggregator.processUpdate(normalizedSymbol, bestBid, bestAsk);
       }
     } catch (error) {
-      console.error('[Lighter] Error saving orderbook:', error);
+      console.error('[Lighter] Error processing orderbook:', error);
     }
   }
 
@@ -313,6 +297,14 @@ export class LighterTracker {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+    }
+
+    // Flush aggregator before stopping
+    if (this.aggregator) {
+      console.log('[Lighter] 💾 Flushing aggregator before stop...');
+      await this.aggregator.forceFlush();
+      this.aggregator.stopFlushTimer();
+      this.aggregator = null;
     }
 
     // Close WebSocket
