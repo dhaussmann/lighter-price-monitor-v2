@@ -522,8 +522,15 @@ export default {
     // Frontend
     //=====================================
 
-    // Lighter Dashboard (default)
-    if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/lighter') {
+    // Overview Page (default)
+    if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/overview') {
+      return new Response(OVERVIEW_HTML, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' }
+      });
+    }
+
+    // Lighter Dashboard
+    if (url.pathname === '/lighter' || url.pathname === '/lighter.html') {
       return new Response(LIGHTER_DASHBOARD, {
         headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' }
       });
@@ -532,13 +539,6 @@ export default {
     // Paradex Dashboard
     if (url.pathname === '/paradex' || url.pathname === '/paradex.html') {
       return new Response(PARADEX_DASHBOARD, {
-        headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' }
-      });
-    }
-
-    // Overview Page
-    if (url.pathname === '/overview') {
-      return new Response(OVERVIEW_HTML, {
         headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' }
       });
     }
@@ -591,6 +591,10 @@ const LIGHTER_DASHBOARD = `<!DOCTYPE html>
       padding: 20px;
     }
     .container { max-width: 1200px; margin: 0 auto; }
+    .nav { margin-bottom: 20px; }
+    .nav a { color: #8b92a8; margin-right: 20px; text-decoration: none; }
+    .nav a:hover { color: #00ff88; }
+    .nav a.active { color: #00ff88; font-weight: bold; }
     h1 {
       font-size: 32px;
       margin-bottom: 10px;
@@ -700,6 +704,11 @@ const LIGHTER_DASHBOARD = `<!DOCTYPE html>
 </head>
 <body>
   <div class="container">
+    <div class="nav">
+      <a href="/overview">Overview</a>
+      <a href="/lighter" class="active">Lighter</a>
+      <a href="/paradex">Paradex</a>
+    </div>
     <h1>⚡ LIGHTER ORDERBOOK TRACKER</h1>
     <p class="subtitle">Streaming Aggregation • 15s Windows • Memory Efficient</p>
 

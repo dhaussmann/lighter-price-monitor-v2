@@ -1,4 +1,4 @@
-name = "lighter-orderbook-tracker"
+name = "orderbook-tracking"
 main = "src/worker-new.ts"
 compatibility_date = "2024-12-15"
 
