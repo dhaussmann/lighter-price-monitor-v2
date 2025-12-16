@@ -11,6 +11,10 @@ class_name = "LighterTracker"
 name = "PARADEX_TRACKER"
 class_name = "ParadexTracker"
 
+[[durable_objects.bindings]]
+name = "ALERT_MANAGER"
+class_name = "AlertManager"
+
 # D1 Database
 [[d1_databases]]
 binding = "DB"
@@ -19,5 +23,9 @@ database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
 
 # Migration
 [[migrations]]
-tag = "v5-paradex"
-new_classes = ["ParadexTracker"]
+tag = "v6-alerts"
+new_classes = ["ParadexTracker", "AlertManager"]
+
+# Cron Trigger - Check alerts every minute
+[triggers]
+crons = ["* * * * *"]

@@ -6,12 +6,14 @@
 import { LighterTracker } from './lighter-new';
 import { ParadexTracker } from './paradex-new';
 import { ArbitrageCalculator } from './arbitrage';
+import { AlertManager } from './alert-manager';
 
-export { LighterTracker, ParadexTracker };
+export { LighterTracker, ParadexTracker, AlertManager };
 
 export interface Env {
   LIGHTER_TRACKER: DurableObjectNamespace;
   PARADEX_TRACKER: DurableObjectNamespace;
+  ALERT_MANAGER: DurableObjectNamespace;
   DB: D1Database;
 }
 
@@ -486,6 +488,37 @@ export default {
     }
 
     //=====================================
+    // Alert Manager API Endpoints
+    //=====================================
+
+    // All /api/alerts/* requests are forwarded to AlertManager DO
+    if (url.pathname.startsWith('/api/alerts')) {
+      try {
+        const id = env.ALERT_MANAGER.idFromName('alert-manager');
+        const manager = env.ALERT_MANAGER.get(id);
+
+        // Forward request to AlertManager
+        const alertRequest = new Request(
+          `http://internal${url.pathname.replace('/api/alerts', '')}${url.search}`,
+          {
+            method: request.method,
+            headers: request.headers,
+            body: request.body
+          }
+        );
+
+        return manager.fetch(alertRequest);
+      } catch (error: any) {
+        return new Response(JSON.stringify({
+          error: error.message || 'Failed to communicate with AlertManager'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    //=====================================
     // Frontend
     //=====================================
 
@@ -512,6 +545,31 @@ export default {
 
     return new Response('Not Found', { status: 404, headers: corsHeaders });
   },
+
+  /**
+   * Scheduled handler for Cron Triggers
+   * Runs periodically to check for arbitrage alerts
+   */
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    console.log('[Cron] 🕐 Scheduled task triggered:', event.cron);
+
+    try {
+      // Initialize and check alerts via AlertManager
+      const id = env.ALERT_MANAGER.idFromName('alert-manager');
+      const manager = env.ALERT_MANAGER.get(id);
+
+      // Trigger alert check
+      const response = await manager.fetch(new Request('http://internal/check', {
+        method: 'POST'
+      }));
+
+      const result = await response.json();
+      console.log('[Cron] ✅ Alert check completed:', result);
+
+    } catch (error) {
+      console.error('[Cron] ❌ Alert check failed:', error);
+    }
+  }
 };
 
 //=====================================
