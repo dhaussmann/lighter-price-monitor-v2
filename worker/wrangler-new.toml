@@ -2,10 +2,14 @@ name = "lighter-orderbook-tracker"
 main = "src/worker-new.ts"
 compatibility_date = "2024-12-15"
 
-# Durable Object
+# Durable Objects
 [[durable_objects.bindings]]
 name = "LIGHTER_TRACKER"
 class_name = "LighterTracker"
+
+[[durable_objects.bindings]]
+name = "PARADEX_TRACKER"
+class_name = "ParadexTracker"
 
 # D1 Database
 [[d1_databases]]
@@ -15,5 +19,5 @@ database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
 
 # Migration
 [[migrations]]
-tag = "v4-clean"
-new_classes = ["LighterTracker"]
+tag = "v5-paradex"
+new_classes = ["LighterTracker", "ParadexTracker"]

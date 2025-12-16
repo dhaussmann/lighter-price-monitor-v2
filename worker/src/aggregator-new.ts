@@ -21,14 +21,16 @@ export class OrderbookAggregator {
   private windowStart: number;
   private windowDuration: number = 15000; // 15 Sekunden
   private db: D1Database;
+  private source: string; // 'lighter' or 'paradex'
   private flushTimer: any = null;
 
-  constructor(db: D1Database) {
+  constructor(db: D1Database, source: string = 'lighter') {
     this.db = db;
+    this.source = source;
     this.currentWindow = new Map();
     this.windowStart = Date.now();
 
-    console.log(`[Aggregator] 🎬 Started - Window: ${this.windowDuration}ms`);
+    console.log(`[Aggregator:${source}] 🎬 Started - Window: ${this.windowDuration}ms`);
     this.startFlushTimer();
   }
 
@@ -92,7 +94,7 @@ export class OrderbookAggregator {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
-      console.log(`[Aggregator] ⏹️ Stopped`);
+      console.log(`[Aggregator:${this.source}] ⏹️ Stopped`);
     }
   }
 
@@ -110,17 +112,18 @@ export class OrderbookAggregator {
     const timestamp = Math.floor(this.windowStart / this.windowDuration) * this.windowDuration;
     const windowDate = new Date(timestamp).toISOString();
 
-    console.log(`[Aggregator] 💾 Flushing ${symbolCount} symbols for window ${windowDate}`);
+    console.log(`[Aggregator:${this.source}] 💾 Flushing ${symbolCount} symbols for window ${windowDate}`);
 
     try {
       const statements: D1PreparedStatement[] = [];
+      const snapshotsTable = `${this.source}_snapshots`;
 
       for (const [symbol, stats] of this.currentWindow) {
         const totalTicks = Math.max(stats.bidCount, stats.askCount);
 
         statements.push(
           this.db.prepare(
-            `INSERT INTO lighter_snapshots
+            `INSERT INTO ${snapshotsTable}
              (symbol, timestamp, avg_bid, avg_ask, avg_spread, min_bid, max_bid, min_ask, max_ask, tick_count)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).bind(
@@ -144,13 +147,13 @@ export class OrderbookAggregator {
         await this.db.batch(batch);
       }
 
-      console.log(`[Aggregator] ✅ Flushed ${symbolCount} snapshots`);
+      console.log(`[Aggregator:${this.source}] ✅ Flushed ${symbolCount} snapshots`);
 
       // Prüfe ob Minuten-Aggregation nötig
       await this.maybeAggregateMinute(timestamp);
 
     } catch (error) {
-      console.error(`[Aggregator] ❌ Flush error:`, error);
+      console.error(`[Aggregator:${this.source}] ❌ Flush error:`, error);
     }
 
     // Memory freigeben!
@@ -167,7 +170,10 @@ export class OrderbookAggregator {
 
     // Bei 4. Snapshot (45s)
     if (windowPosition === 3) {
-      console.log(`[Aggregator] 📊 Calculating minute average for ${new Date(minuteStart).toISOString()}`);
+      console.log(`[Aggregator:${this.source}] 📊 Calculating minute average for ${new Date(minuteStart).toISOString()}`);
+
+      const snapshotsTable = `${this.source}_snapshots`;
+      const minutesTable = `${this.source}_minutes`;
 
       try {
         const result = await this.db.prepare(`
@@ -180,7 +186,7 @@ export class OrderbookAggregator {
                  MIN(min_ask) as minute_min_ask,
                  MAX(max_ask) as minute_max_ask,
                  SUM(tick_count) as total_ticks
-          FROM lighter_snapshots
+          FROM ${snapshotsTable}
           WHERE timestamp >= ? AND timestamp < ?
           GROUP BY symbol
         `).bind(minuteStart, minuteStart + 60000).all();
@@ -188,7 +194,7 @@ export class OrderbookAggregator {
         if (result.results && result.results.length > 0) {
           const statements = result.results.map((row: any) =>
             this.db.prepare(
-              `INSERT OR REPLACE INTO lighter_minutes
+              `INSERT OR REPLACE INTO ${minutesTable}
                (symbol, timestamp, avg_bid, avg_ask, avg_spread, min_bid, max_bid, min_ask, max_ask, tick_count)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).bind(
@@ -206,18 +212,18 @@ export class OrderbookAggregator {
           );
 
           await this.db.batch(statements);
-          console.log(`[Aggregator] ✅ Aggregated ${result.results.length} minute averages`);
+          console.log(`[Aggregator:${this.source}] ✅ Aggregated ${result.results.length} minute averages`);
         }
 
         // Alte Snapshots löschen
         await this.db.prepare(
-          `DELETE FROM lighter_snapshots WHERE timestamp < ?`
+          `DELETE FROM ${snapshotsTable} WHERE timestamp < ?`
         ).bind(minuteStart).run();
 
-        console.log(`[Aggregator] 🧹 Cleaned old snapshots`);
+        console.log(`[Aggregator:${this.source}] 🧹 Cleaned old snapshots`);
 
       } catch (error) {
-        console.error(`[Aggregator] ❌ Minute aggregation error:`, error);
+        console.error(`[Aggregator:${this.source}] ❌ Minute aggregation error:`, error);
       }
     }
   }
@@ -227,16 +233,18 @@ export class OrderbookAggregator {
    */
   async cleanupOldMinutes(): Promise<void> {
     const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    const minutesTable = `${this.source}_minutes`;
+
     try {
       const result = await this.db.prepare(
-        `DELETE FROM lighter_minutes WHERE timestamp < ?`
+        `DELETE FROM ${minutesTable} WHERE timestamp < ?`
       ).bind(oneHourAgo).run();
 
       if (result.meta.changes && result.meta.changes > 0) {
-        console.log(`[Aggregator] 🧹 Deleted ${result.meta.changes} old minute records`);
+        console.log(`[Aggregator:${this.source}] 🧹 Deleted ${result.meta.changes} old minute records`);
       }
     } catch (error) {
-      console.error(`[Aggregator] ❌ Cleanup error:`, error);
+      console.error(`[Aggregator:${this.source}] ❌ Cleanup error:`, error);
     }
   }
 
