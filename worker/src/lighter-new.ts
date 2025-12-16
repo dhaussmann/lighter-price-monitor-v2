@@ -85,26 +85,45 @@ export class LighterTracker {
     console.log(`[Lighter] 🔍 Loading markets from API...`);
 
     try {
-      const response = await fetch('https://explorer.elliot.ai/api/markets');
+      // Verwende die orderBooks API statt explorer API
+      const response = await fetch('https://mainnet.zklighter.elliot.ai/api/v1/orderBooks', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; LighterTracker/1.0)',
+          'Accept': 'application/json'
+        }
+      });
 
       if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
+        throw new Error(`API returned ${response.status}: ${response.statusText}`);
       }
 
-      const markets: MarketMapping[] = await response.json();
-      console.log(`[Lighter] 📋 Received ${markets.length} markets from API`);
+      const data = await response.json();
 
-      // In Memory-Map speichern
-      for (const market of markets) {
-        this.markets.set(market.market_index, market.symbol);
+      if (data.code !== 200 || !data.order_books) {
+        throw new Error('Invalid API response format');
       }
 
-      // In Datenbank speichern (für spätere Verwendung)
-      const statements = markets.map(m =>
+      console.log(`[Lighter] 📋 Received ${data.order_books.length} markets from API`);
+
+      // Extrahiere Market-Index und Symbol
+      const activeMarkets = data.order_books.filter((m: any) => m.status === 'active');
+
+      for (const market of activeMarkets) {
+        // market_id ist der numeric index, symbol ist z.B. "ETH/USDC"
+        const marketIndex = parseInt(market.market_id);
+
+        // Extrahiere Base-Asset (z.B. "ETH" aus "ETH/USDC")
+        const symbol = market.symbol.split(/[\/\-]/)[0];
+
+        this.markets.set(marketIndex, symbol);
+      }
+
+      // In Datenbank speichern
+      const statements = Array.from(this.markets.entries()).map(([index, symbol]) =>
         this.env.DB.prepare(
           `INSERT OR REPLACE INTO lighter_markets (market_index, symbol, last_updated)
            VALUES (?, ?, ?)`
-        ).bind(m.market_index, m.symbol, Date.now())
+        ).bind(index, symbol, Date.now())
       );
 
       // Batch insert (max 50)
@@ -113,7 +132,7 @@ export class LighterTracker {
         await this.env.DB.batch(batch);
       }
 
-      console.log(`[Lighter] ✅ Loaded ${this.markets.size} markets`);
+      console.log(`[Lighter] ✅ Loaded ${this.markets.size} active markets`);
       console.log(`[Lighter] 📊 Sample markets:`, Array.from(this.markets.entries()).slice(0, 5));
 
     } catch (error) {
