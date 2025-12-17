@@ -387,8 +387,14 @@ export default {
       try {
         const id = env.HYPERLIQUID_TRACKER.idFromName('hyperliquid-tracker');
         const tracker = env.HYPERLIQUID_TRACKER.get(id);
-        const response = await tracker.fetch(request);
-        return response;
+
+        // Forward request to tracker with correct path
+        const statsResponse = await tracker.fetch(new Request('http://internal/stats'));
+        const stats = await statsResponse.json();
+
+        return new Response(JSON.stringify(stats), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       } catch (error) {
         return new Response(JSON.stringify({ error: 'Failed to fetch stats' }), {
           status: 500,
