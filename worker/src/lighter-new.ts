@@ -395,8 +395,23 @@ export class LighterTracker {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Handle internal ensure-running ping (wakes up DO and triggers auto-start)
+    // Handle internal ensure-running ping (wakes up DO and ensures tracking is active)
     if (url.pathname === '/ensure-running') {
+      console.log(`[Lighter] 🔍 Ensure-running check: isTracking=${this.isTracking}`);
+
+      // Auto-start if not already tracking
+      if (!this.isTracking) {
+        console.log(`[Lighter] 🚀 Auto-starting from ensure-running...`);
+        try {
+          await this.initialize();
+          this.isTracking = true;
+          await this.state.storage.put('isTracking', true);
+          console.log(`[Lighter] ✅ Auto-start successful`);
+        } catch (error) {
+          console.error(`[Lighter] ❌ Auto-start failed:`, error);
+        }
+      }
+
       return new Response(JSON.stringify({
         ok: true,
         isTracking: this.isTracking,
