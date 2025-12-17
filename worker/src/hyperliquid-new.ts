@@ -44,9 +44,27 @@ export class HyperliquidTracker extends DurableObject<Env> {
       // Auto-start tracking if enabled (MUST be inside blockConcurrencyWhile!)
       if (this.isTracking) {
         console.log(`[Hyperliquid] ▶️ Auto-starting tracking...`);
-        this.startTracking();  // Direct call, no setTimeout
+        this.initialize();  // Use initialize() like Lighter/Paradex
       }
     });
+  }
+
+  /**
+   * Initialisierung
+   */
+  async initialize(): Promise<void> {
+    console.log(`[Hyperliquid] 🔧 Initializing...`);
+
+    // Aggregator erstellen
+    this.aggregator = new OrderbookAggregator(this.env.DB, 'hyperliquid');
+
+    // Markets laden
+    await this.loadMarkets();
+
+    // WebSocket verbinden
+    this.connectWebSocket();
+
+    console.log(`[Hyperliquid] ✅ Initialized`);
   }
 
   /**
@@ -302,7 +320,7 @@ export class HyperliquidTracker extends DurableObject<Env> {
   }
 
   /**
-   * Start tracking
+   * Start tracking (called from dashboard)
    */
   async startTracking(): Promise<any> {
     if (this.isTracking) {
@@ -312,14 +330,8 @@ export class HyperliquidTracker extends DurableObject<Env> {
     console.log(`[Hyperliquid] 🚀 Starting tracker...`);
 
     try {
-      // Initialize aggregator
-      this.aggregator = new OrderbookAggregator(this.env.DB, 'hyperliquid');
-
-      // Load markets
-      await this.loadMarkets();
-
-      // Connect WebSocket
-      this.connectWebSocket();
+      // Initialize
+      await this.initialize();
 
       this.isTracking = true;
       await this.ctx.storage.put('isTracking', true);
