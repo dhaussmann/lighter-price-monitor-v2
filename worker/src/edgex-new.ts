@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { OrderbookAggregator } from './aggregator';
+import { OrderBookAggregator } from './aggregator';
 
 interface Env {
   DB: D1Database;
@@ -18,7 +18,7 @@ export class EdgeXTracker extends DurableObject<Env> {
   private isTracking: boolean = false;
   private messagesReceived: number = 0;
   private lastMessageAt: number = 0;
-  private aggregator: OrderbookAggregator | null = null;
+  private aggregator: OrderBookAggregator | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -52,7 +52,7 @@ export class EdgeXTracker extends DurableObject<Env> {
     console.log(`[EdgeX] 🔧 Initializing...`);
 
     // Aggregator erstellen
-    this.aggregator = new OrderbookAggregator(this.env.DB, 'edgex');
+    this.aggregator = new OrderBookAggregator(this.env.DB, 'edgex');
 
     // Markets laden
     await this.loadMarkets();
