@@ -28,7 +28,7 @@ database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
 # Migration
 [[migrations]]
 tag = "v7-hyperliquid"
-new_classes = ["HyperliquidTracker", "AlertManager"]
+new_classes = ["HyperliquidTracker"]
 
 # Cron Trigger - Check alerts every minute
 [triggers]
