@@ -1542,454 +1542,212 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
+
 const HYPERLIQUID_DASHBOARD = `<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hyperliquid Tracker - Orderbook Monitor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <title>Hyperliquid Orderbook Tracker</title>
   <style>
-    :root {
-      --bg-primary: #0a0b0d;
-      --bg-secondary: #13141a;
-      --bg-card: #1a1c26;
-      --accent-green: #00ff88;
-      --accent-red: #ff3366;
-      --accent-blue: #00d4ff;
-      --accent-orange: #ff9500;
-      --text-primary: #ffffff;
-      --text-secondary: #8b92a8;
-      --border: #2a2d3a;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'JetBrains Mono', monospace;
-      background: var(--bg-primary);
-      color: var(--text-primary);
+      font-family: 'Courier New', monospace;
+      background: #0a0b0d;
+      color: #ff9500;
       padding: 20px;
     }
-
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-
+    .container { max-width: 1200px; margin: 0 auto; }
+    .nav { margin-bottom: 20px; }
+    .nav a { color: #8b92a8; margin-right: 20px; text-decoration: none; }
+    .nav a:hover { color: #ff9500; }
+    .nav a.active { color: #ff9500; font-weight: bold; }
     h1 {
-      font-family: 'Syne', sans-serif;
-      font-size: 48px;
-      font-weight: 800;
-      background: linear-gradient(135deg, var(--accent-orange), var(--accent-blue));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 8px;
-    }
-
-    .subtitle {
-      font-size: 14px;
-      color: var(--text-secondary);
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-
-    .stat-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      transition: all 0.3s ease;
-    }
-
-    .stat-card:hover {
-      border-color: var(--accent-orange);
-      transform: translateY(-2px);
-    }
-
-    .stat-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-    }
-
-    .stat-value {
       font-size: 32px;
-      font-weight: 800;
-      font-family: 'Syne', sans-serif;
-      color: var(--accent-orange);
+      margin-bottom: 10px;
+      text-shadow: 0 0 10px #ff9500;
     }
-
-    .status-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .status-active {
-      background: rgba(0, 255, 136, 0.15);
-      color: var(--accent-green);
-      border: 1px solid rgba(0, 255, 136, 0.3);
-    }
-
-    .status-inactive {
-      background: rgba(139, 146, 168, 0.15);
-      color: var(--text-secondary);
-      border: 1px solid var(--border);
-    }
-
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    .controls {
-      display: flex;
-      gap: 12px;
+    .subtitle {
+      color: #8b92a8;
       margin-bottom: 30px;
-      justify-content: center;
+      font-size: 14px;
     }
-
-    .btn {
+    .control-panel {
+      background: #1a1c26;
+      border: 1px solid #ff9500;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .status {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 20px;
+      margin-bottom: 15px;
+      font-weight: bold;
+    }
+    .status.running { background: rgba(255, 149, 0, 0.2); color: #ff9500; }
+    .status.stopped { background: rgba(255, 51, 102, 0.2); color: #ff3366; }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    button {
       padding: 12px 24px;
       border: none;
-      border-radius: 8px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .btn-primary {
-      background: var(--accent-green);
-      color: var(--bg-primary);
-    }
-
-    .btn-primary:hover {
-      background: #00dd77;
-      transform: translateY(-2px);
-    }
-
-    .btn-danger {
-      background: var(--accent-red);
-      color: var(--text-primary);
-    }
-
-    .btn-danger:hover {
-      background: #ee2255;
-      transform: translateY(-2px);
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .markets-section {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 30px;
-    }
-
-    .section-title {
-      font-family: 'Syne', sans-serif;
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 20px;
-      color: var(--accent-orange);
-    }
-
-    .markets-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-      gap: 12px;
-      max-height: 400px;
-      overflow-y: auto;
-    }
-
-    .market-badge {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 8px 12px;
-      text-align: center;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--accent-orange);
-      transition: all 0.2s ease;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
     }
-
-    .market-badge:hover {
-      background: var(--bg-primary);
-      border-color: var(--accent-orange);
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
     }
-
-    .log {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      max-height: 400px;
+    .btn-start {
+      background: #ff9500;
+      color: #0a0b0d;
+    }
+    .btn-start:hover:not(:disabled) {
+      background: #e68600;
+      transform: translateY(-1px);
+    }
+    .btn-stop {
+      background: #ff3366;
+      color: white;
+    }
+    .btn-stop:hover:not(:disabled) {
+      background: #cc2952;
+      transform: translateY(-1px);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .stat-item {
+      background: #13141a;
+      padding: 15px;
+      border-radius: 6px;
+      border-left: 3px solid #ff9500;
+    }
+    .stat-label {
+      color: #8b92a8;
+      font-size: 11px;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .log-panel {
+      background: #13141a;
+      border: 1px solid #2a2d3a;
+      border-radius: 6px;
+      padding: 15px;
+      max-height: 300px;
       overflow-y: auto;
       font-size: 12px;
-      line-height: 1.8;
+      line-height: 1.6;
     }
-
     .log-entry {
-      padding: 4px 0;
-      border-bottom: 1px solid rgba(42, 45, 58, 0.3);
+      margin-bottom: 5px;
     }
-
     .log-time {
-      color: var(--text-secondary);
-      margin-right: 12px;
+      color: #8b92a8;
+      margin-right: 10px;
     }
-
-    .log-message {
-      color: var(--text-primary);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      color: var(--text-secondary);
-    }
-
     .loading {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent-orange);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+      text-align: center;
+      padding: 40px;
+      color: #8b92a8;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <h1>🟠 HYPERLIQUID TRACKER</h1>
-      <p class="subtitle">Real-time Orderbook Monitoring für Hyperliquid DEX</p>
+    <div class="nav">
+      <a href="/overview">Overview</a>
+      <a href="/lighter">Lighter</a>
+      <a href="/paradex">Paradex</a>
+      <a href="/hyperliquid" class="active">Hyperliquid</a>
     </div>
+    <h1>🟠 HYPERLIQUID ORDERBOOK TRACKER</h1>
+    <p class="subtitle">Streaming Aggregation • 15s Windows • Memory Efficient</p>
 
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">Status</div>
-        <div id="statusIndicator" class="status-indicator status-inactive">
-          <span class="status-dot"></span>
-          <span>Offline</span>
+    <div class="control-panel">
+      <div class="status" id="status">Connecting...</div>
+
+      <div class="buttons">
+        <button class="btn-start" id="startBtn" disabled>▶ START TRACKING</button>
+        <button class="btn-stop" id="stopBtn" disabled>⏸ STOP TRACKING</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">Markets</div>
+          <div class="stat-value" id="marketsCount">-</div>
         </div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-label">Markets</div>
-        <div class="stat-value" id="marketCount">-</div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-label">Messages Received</div>
-        <div class="stat-value" id="messagesReceived">-</div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-label">Snapshots</div>
-        <div class="stat-value" id="snapshotCount">-</div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-label">Minutes Aggregated</div>
-        <div class="stat-value" id="minuteCount">-</div>
-      </div>
-    </div>
-
-    <div class="controls">
-      <button id="startBtn" class="btn btn-primary" onclick="startTracking()">
-        ▶ Start Tracking
-      </button>
-      <button id="stopBtn" class="btn btn-danger" onclick="stopTracking()" disabled>
-        ⏸ Stop Tracking
-      </button>
-      <button class="btn" onclick="loadStats()" style="background: var(--bg-secondary); color: var(--text-primary);">
-        🔄 Refresh
-      </button>
-    </div>
-
-    <div class="markets-section">
-      <div class="section-title">📊 Tracked Markets</div>
-      <div id="marketsContainer">
-        <div class="empty-state">
-          <div class="loading"></div>
-          <p style="margin-top: 16px;">Loading markets...</p>
+        <div class="stat-item">
+          <div class="stat-label">Messages</div>
+          <div class="stat-value" id="messagesCount">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Snapshots in DB</div>
+          <div class="stat-value" id="snapshotsCount">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Minutes in DB</div>
+          <div class="stat-value" id="minutesCount">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Current Window</div>
+          <div class="stat-value" id="windowSymbols">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Last Message</div>
+          <div class="stat-value" id="lastMessage">-</div>
         </div>
       </div>
     </div>
 
-    <div class="markets-section">
-      <div class="section-title">📝 Activity Log</div>
-      <div id="logContainer" class="log">
-        <div class="log-entry">
-          <span class="log-time">[--:--:--]</span>
-          <span class="log-message">Waiting for connection...</span>
-        </div>
-      </div>
+    <div class="log-panel" id="logPanel">
+      <div class="log-entry"><span class="log-time">[00:00:00]</span> Waiting for connection...</div>
     </div>
   </div>
 
   <script>
-    const API_BASE = window.location.origin;
-    const WS_URL = window.location.origin.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/hyperliquid';
-
+    const WS_URL = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
     let ws = null;
-    let reconnectTimer = null;
+    let reconnectTimeout = null;
 
-    loadStats();
-    loadMarkets();
-    setInterval(loadStats, 30000);
-
-    async function loadStats() {
-      try {
-        const response = await fetch(\`\${API_BASE}/api/hyperliquid/stats\`);
-        const stats = await response.json();
-        updateStats(stats);
-        log('✅ Stats refreshed');
-      } catch (error) {
-        log(\`❌ Failed to load stats: \${error.message}\`);
-      }
-    }
-
-    async function loadMarkets() {
-      try {
-        const response = await fetch(\`\${API_BASE}/api/hyperliquid/markets\`);
-        const data = await response.json();
-        renderMarkets(data.markets || []);
-        log(\`📊 Loaded \${data.count || 0} markets\`);
-      } catch (error) {
-        log(\`❌ Failed to load markets: \${error.message}\`);
-        document.getElementById('marketsContainer').innerHTML = \`
-          <div class="empty-state">
-            <p style="color: var(--accent-red);">❌ Error loading markets</p>
-          </div>
-        \`;
-      }
-    }
-
-    function updateStats(stats) {
-      document.getElementById('marketCount').textContent = stats.markets || 0;
-      document.getElementById('messagesReceived').textContent = (stats.messagesReceived || 0).toLocaleString();
-      document.getElementById('snapshotCount').textContent = (stats.database?.snapshots || 0).toLocaleString();
-      document.getElementById('minuteCount').textContent = (stats.database?.minutes || 0).toLocaleString();
-
-      const statusEl = document.getElementById('statusIndicator');
-      if (stats.isTracking) {
-        statusEl.className = 'status-indicator status-active';
-        statusEl.innerHTML = '<span class="status-dot"></span><span>Active</span>';
-        document.getElementById('startBtn').disabled = true;
-        document.getElementById('stopBtn').disabled = false;
-      } else {
-        statusEl.className = 'status-indicator status-inactive';
-        statusEl.innerHTML = '<span class="status-dot"></span><span>Offline</span>';
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
-      }
-    }
-
-    function renderMarkets(markets) {
-      const container = document.getElementById('marketsContainer');
-
-      if (!markets || markets.length === 0) {
-        container.innerHTML = \`
-          <div class="empty-state">
-            <p>📭 No markets found</p>
-            <p style="font-size: 12px; margin-top: 8px; opacity: 0.6;">
-              Start tracking to load markets
-            </p>
-          </div>
-        \`;
-        return;
-      }
-
-      container.innerHTML = \`
-        <div class="markets-grid">
-          \${markets.map(m => \`<div class="market-badge">\${m.symbol}</div>\`).join('')}
-        </div>
-      \`;
-    }
-
-    function connectWebSocket() {
-      if (ws) return;
-
-      log('🔌 Connecting to WebSocket...');
-      ws = new WebSocket(WS_URL);
+    // Connect to WebSocket
+    function connect() {
+      log('Connecting to Hyperliquid WebSocket...');
+      ws = new WebSocket(WS_URL + window.location.host + '/ws/hyperliquid');
 
       ws.onopen = () => {
-        log('✅ WebSocket connected');
+        log('✅ Connected to Dashboard');
+        dashboardConnected = true;
         ws.send(JSON.stringify({ type: 'get_stats' }));
+        startStatsInterval();
       };
 
       ws.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-
-        if (message.type === 'stats') {
-          updateStats(message.data);
-        } else if (message.type === 'status') {
-          log(\`📊 Status update: \${JSON.stringify(message.data)}\`);
-          loadStats();
-        } else if (message.type === 'control') {
-          log(\`🎛️ Control response: \${message.data.message}\`);
-          loadStats();
-          if (message.data.success) {
-            loadMarkets();
-          }
-        }
+        const msg = JSON.parse(event.data);
+        handleMessage(msg);
       };
 
       ws.onclose = () => {
-        log('🔌 WebSocket disconnected');
-        ws = null;
-        scheduleReconnect();
+        log('❌ Disconnected from Dashboard');
+        dashboardConnected = false;
+        updateStatus(false, false);
+        reconnectTimeout = setTimeout(connect, 5000);
       };
 
       ws.onerror = (error) => {
@@ -1997,50 +1755,101 @@ const HYPERLIQUID_DASHBOARD = `<!DOCTYPE html>
       };
     }
 
-    function scheduleReconnect() {
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(() => {
-        log('🔄 Reconnecting...');
-        connectWebSocket();
-      }, 5000);
-    }
-
-    function startTracking() {
-      connectWebSocket();
-      setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          log('▶ Starting tracker...');
-          ws.send(JSON.stringify({ type: 'start_tracking' }));
-        }
-      }, 1000);
-    }
-
-    function stopTracking() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        log('⏸ Stopping tracker...');
-        ws.send(JSON.stringify({ type: 'stop_tracking' }));
+    // Handle messages
+    function handleMessage(msg) {
+      if (msg.type === 'stats') {
+        updateStats(msg.data);
+      } else if (msg.type === 'control') {
+        log(msg.data.message);
+        ws.send(JSON.stringify({ type: 'get_stats' }));
+      } else if (msg.type === 'status') {
+        log(msg.data.isTracking ? '▶️ Tracking started' : '⏸️ Tracking stopped');
+        updateStatus(msg.data.isTracking, true);
       }
     }
 
-    function log(message) {
-      const container = document.getElementById('logContainer');
-      const time = new Date().toLocaleTimeString('de-DE');
+    // Update stats
+    function updateStats(data) {
+      updateStatus(data.isTracking, data.connected);
 
+      document.getElementById('marketsCount').textContent = data.markets || 0;
+      document.getElementById('messagesCount').textContent = (data.messagesReceived || 0).toLocaleString();
+      document.getElementById('snapshotsCount').textContent = data.database?.snapshots || 0;
+      document.getElementById('minutesCount').textContent = data.database?.minutes || 0;
+      document.getElementById('windowSymbols').textContent = data.aggregator?.currentSymbols || 0;
+
+      if (data.lastMessageAt) {
+        const ago = Math.floor((Date.now() - data.lastMessageAt) / 1000);
+        document.getElementById('lastMessage').textContent = ago + 's ago';
+      }
+    }
+
+    // Update status
+    let dashboardConnected = false;
+
+    function updateStatus(isTracking, hyperliquidConnected) {
+      const statusEl = document.getElementById('status');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+
+      if (isTracking) {
+        statusEl.textContent = '🟢 TRACKING';
+        statusEl.className = 'status running';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+      } else if (hyperliquidConnected) {
+        statusEl.textContent = '🟡 CONNECTED (Not Tracking)';
+        statusEl.className = 'status stopped';
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      } else {
+        statusEl.textContent = '🔴 DISCONNECTED';
+        statusEl.className = 'status stopped';
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+      }
+    }
+
+    // Button handlers
+    document.getElementById('startBtn').addEventListener('click', () => {
+      log('Sending START command...');
+      ws.send(JSON.stringify({ type: 'start_tracking' }));
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+      log('Sending STOP command...');
+      ws.send(JSON.stringify({ type: 'stop_tracking' }));
+    });
+
+    // Log function
+    function log(msg) {
+      const panel = document.getElementById('logPanel');
+      const time = new Date().toLocaleTimeString('de-DE');
       const entry = document.createElement('div');
       entry.className = 'log-entry';
-      entry.innerHTML = \`
-        <span class="log-time">[\${time}]</span>
-        <span class="log-message">\${message}</span>
-      \`;
+      entry.innerHTML = \`<span class="log-time">[\${time}]</span> \${msg}\`;
+      panel.insertBefore(entry, panel.firstChild);
 
-      container.insertBefore(entry, container.firstChild);
-
-      while (container.children.length > 50) {
-        container.removeChild(container.lastChild);
+      // Keep only last 50 entries
+      while (panel.children.length > 50) {
+        panel.removeChild(panel.lastChild);
       }
     }
 
-    setTimeout(connectWebSocket, 1000);
+    // Stats refresh interval
+    let statsInterval = null;
+
+    function startStatsInterval() {
+      if (statsInterval) clearInterval(statsInterval);
+      statsInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'get_stats' }));
+        }
+      }, 5000); // Every 5 seconds
+    }
+
+    // Connect on load
+    connect();
   </script>
 </body>
 </html>`;
