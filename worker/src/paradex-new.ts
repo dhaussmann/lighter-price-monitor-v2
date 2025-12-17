@@ -417,9 +417,22 @@ export class ParadexTracker {
   }
 
   /**
-   * WebSocket Handler (für Dashboard)
+   * WebSocket Handler (für Dashboard) + HTTP endpoints
    */
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Handle internal ensure-running ping (wakes up DO and triggers auto-start)
+    if (url.pathname === '/ensure-running') {
+      return new Response(JSON.stringify({
+        ok: true,
+        isTracking: this.isTracking,
+        markets: this.markets.size
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     const upgradeHeader = request.headers.get('Upgrade');
     if (upgradeHeader !== 'websocket') {
       return new Response('Expected WebSocket', { status: 426 });

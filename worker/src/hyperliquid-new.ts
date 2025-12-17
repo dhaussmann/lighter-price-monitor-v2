@@ -433,6 +433,17 @@ export class HyperliquidTracker extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
+    // Handle internal ensure-running ping (wakes up DO and triggers auto-start)
+    if (url.pathname === '/ensure-running') {
+      return new Response(JSON.stringify({
+        ok: true,
+        isTracking: this.isTracking,
+        markets: this.markets.size
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     // WebSocket upgrade
     if (request.headers.get('Upgrade') === 'websocket') {
       const pair = new WebSocketPair();
