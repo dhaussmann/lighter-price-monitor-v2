@@ -50,10 +50,17 @@ export class ParadexTracker {
 
     console.log(`[Paradex] 🎬 Durable Object created`);
 
-    // Load tracking state
+    // Load tracking state - AUTO-START by default
     this.state.blockConcurrencyWhile(async () => {
-      this.isTracking = await this.state.storage.get<boolean>('isTracking') ?? false;
-      console.log(`[Paradex] 📂 Loaded state: isTracking=${this.isTracking}`);
+      const storedState = await this.state.storage.get<boolean>('isTracking');
+      // Auto-start if never set before (undefined), otherwise use stored state
+      this.isTracking = storedState !== undefined ? storedState : true;
+      console.log(`[Paradex] 📂 Loaded state: isTracking=${this.isTracking} (stored=${storedState})`);
+
+      // Persist the auto-start state if this is first time
+      if (storedState === undefined) {
+        await this.state.storage.put('isTracking', true);
+      }
     });
 
     if (this.isTracking) {
