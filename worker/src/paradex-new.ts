@@ -61,12 +61,13 @@ export class ParadexTracker {
       if (storedState === undefined) {
         await this.state.storage.put('isTracking', true);
       }
-    });
 
-    if (this.isTracking) {
-      console.log(`[Paradex] ▶️ Auto-starting tracking...`);
-      this.initialize();
-    }
+      // Auto-start tracking if enabled (MUST be inside blockConcurrencyWhile!)
+      if (this.isTracking) {
+        console.log(`[Paradex] ▶️ Auto-starting tracking...`);
+        this.initialize();
+      }
+    });
   }
 
   /**
