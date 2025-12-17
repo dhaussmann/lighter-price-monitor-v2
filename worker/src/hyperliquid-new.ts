@@ -26,6 +26,26 @@ export class HyperliquidTracker extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+
+    console.log(`[Hyperliquid] 🎬 Durable Object created`);
+
+    // Load tracking state - AUTO-START by default
+    this.ctx.blockConcurrencyWhile(async () => {
+      const storedState = await this.ctx.storage.get<boolean>('isTracking');
+      // Auto-start if never set before (undefined), otherwise use stored state
+      this.isTracking = storedState !== undefined ? storedState : true;
+      console.log(`[Hyperliquid] 📂 Loaded state: isTracking=${this.isTracking} (stored=${storedState})`);
+
+      // Persist the auto-start state if this is first time
+      if (storedState === undefined) {
+        await this.ctx.storage.put('isTracking', true);
+      }
+    });
+
+    if (this.isTracking) {
+      console.log(`[Hyperliquid] ▶️ Auto-starting tracking...`);
+      setTimeout(() => this.startTracking(), 1000);
+    }
   }
 
   /**
@@ -301,6 +321,7 @@ export class HyperliquidTracker extends DurableObject<Env> {
       this.connectWebSocket();
 
       this.isTracking = true;
+      await this.ctx.storage.put('isTracking', true);
 
       console.log(`[Hyperliquid] ✅ Tracking started`);
 
@@ -336,6 +357,7 @@ export class HyperliquidTracker extends DurableObject<Env> {
     console.log(`[Hyperliquid] ⏸️ Stopping tracker...`);
 
     this.isTracking = false;
+    await this.ctx.storage.put('isTracking', false);
     this.cleanup();
 
     if (this.aggregator) {
