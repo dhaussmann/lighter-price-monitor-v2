@@ -295,4 +295,25 @@ export class OrderBookAggregator {
   async forceFlush(): Promise<void> {
     await this.flushWindow();
   }
+
+  /**
+   * Gibt Statistiken über den aktuellen Zustand zurück
+   */
+  getStats() {
+    return {
+      source: this.source,
+      currentWindowSymbols: this.currentWindow.size,
+      windowStart: this.windowStart,
+      windowDuration: this.windowDuration,
+      windowAge: Date.now() - this.windowStart
+    };
+  }
+
+  /**
+   * Stoppt den Aggregator
+   */
+  async stop(): Promise<void> {
+    this.stopFlushTimer();
+    await this.forceFlush();
+  }
 }
