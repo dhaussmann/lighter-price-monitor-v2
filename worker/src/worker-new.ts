@@ -887,6 +887,7 @@ const LIGHTER_DASHBOARD = `<!DOCTYPE html>
       <a href="/overview">Overview</a>
       <a href="/lighter" class="active">Lighter</a>
       <a href="/paradex">Paradex</a>
+      <a href="/hyperliquid">Hyperliquid</a>
     </div>
     <h1>⚡ LIGHTER ORDERBOOK TRACKER</h1>
     <p class="subtitle">Streaming Aggregation • 15s Windows • Memory Efficient</p>
@@ -1192,9 +1193,10 @@ const PARADEX_DASHBOARD = `<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="nav">
+      <a href="/overview">Overview</a>
       <a href="/lighter">Lighter</a>
       <a href="/paradex" class="active">Paradex</a>
-      <a href="/overview">Overview</a>
+      <a href="/hyperliquid">Hyperliquid</a>
     </div>
 
     <h1>🔷 PARADEX ORDERBOOK TRACKER</h1>
@@ -1387,12 +1389,14 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
     }
     .exchange-card.lighter { border-left: 4px solid #00ff88; }
     .exchange-card.paradex { border-left: 4px solid #00d4ff; }
+    .exchange-card.hyperliquid { border-left: 4px solid #ff9500; }
     .exchange-card h2 {
       font-size: 24px;
       margin-bottom: 20px;
     }
     .exchange-card.lighter h2 { color: #00ff88; }
     .exchange-card.paradex h2 { color: #00d4ff; }
+    .exchange-card.hyperliquid h2 { color: #ff9500; }
     .stat-row {
       display: flex;
       justify-content: space-between;
@@ -1424,6 +1428,10 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
       background: #00d4ff;
       color: #0a0b0d;
     }
+    .btn-hyperliquid {
+      background: #ff9500;
+      color: #0a0b0d;
+    }
     .btn:hover {
       transform: translateY(-2px);
       filter: brightness(1.1);
@@ -1433,9 +1441,10 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="nav">
+      <a href="/overview" class="active">Overview</a>
       <a href="/lighter">Lighter</a>
       <a href="/paradex">Paradex</a>
-      <a href="/overview" class="active">Overview</a>
+      <a href="/hyperliquid">Hyperliquid</a>
     </div>
 
     <h1>📊 EXCHANGE OVERVIEW</h1>
@@ -1492,6 +1501,32 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
         </div>
         <a href="/paradex" class="btn btn-paradex">Open Dashboard →</a>
       </div>
+
+      <!-- Hyperliquid Card -->
+      <div class="exchange-card hyperliquid">
+        <h2>🟠 Hyperliquid</h2>
+        <div class="stat-row">
+          <span class="stat-label">Status</span>
+          <span class="stat-value" id="hyperliquidStatus">Loading...</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Markets</span>
+          <span class="stat-value" id="hyperliquidMarkets">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Messages</span>
+          <span class="stat-value" id="hyperliquidMessages">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Snapshots</span>
+          <span class="stat-value" id="hyperliquidSnapshots">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Minutes</span>
+          <span class="stat-value" id="hyperliquidMinutes">-</span>
+        </div>
+        <a href="/hyperliquid" class="btn btn-hyperliquid">Open Dashboard →</a>
+      </div>
     </div>
   </div>
 
@@ -1518,6 +1553,17 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
           paradexWs.close();
         }
       };
+
+      // Hyperliquid stats via WebSocket
+      const hyperliquidWs = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/hyperliquid');
+      hyperliquidWs.onopen = () => hyperliquidWs.send(JSON.stringify({ type: 'get_stats' }));
+      hyperliquidWs.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'stats') {
+          updateHyperliquidStats(msg.data);
+          hyperliquidWs.close();
+        }
+      };
     }
 
     function updateLighterStats(data) {
@@ -1534,6 +1580,14 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
       document.getElementById('paradexMessages').textContent = (data.messagesReceived || 0).toLocaleString();
       document.getElementById('paradexSnapshots').textContent = data.database?.snapshots || 0;
       document.getElementById('paradexMinutes').textContent = data.database?.minutes || 0;
+    }
+
+    function updateHyperliquidStats(data) {
+      document.getElementById('hyperliquidStatus').textContent = data.isTracking ? '🟢 Tracking' : '🔴 Stopped';
+      document.getElementById('hyperliquidMarkets').textContent = data.markets || 0;
+      document.getElementById('hyperliquidMessages').textContent = (data.messagesReceived || 0).toLocaleString();
+      document.getElementById('hyperliquidSnapshots').textContent = data.database?.snapshots || 0;
+      document.getElementById('hyperliquidMinutes').textContent = data.database?.minutes || 0;
     }
 
     loadStats();
