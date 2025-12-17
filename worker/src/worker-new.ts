@@ -727,12 +727,55 @@ export default {
 
   /**
    * Scheduled handler for Cron Triggers
-   * Runs periodically to check for arbitrage alerts
+   * Runs periodically to check for arbitrage alerts and ensure trackers are running
    */
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     console.log('[Cron] 🕐 Scheduled task triggered:', event.cron);
 
     try {
+      // Ensure all trackers are running (wakes them up if needed)
+      console.log('[Cron] 🚀 Ensuring trackers are running...');
+
+      const trackerChecks = [
+        // Lighter
+        (async () => {
+          try {
+            const id = env.LIGHTER_TRACKER.idFromName('lighter-tracker');
+            const tracker = env.LIGHTER_TRACKER.get(id);
+            const response = await tracker.fetch(new Request('http://internal/ensure-running'));
+            console.log('[Cron] ✅ Lighter tracker checked');
+          } catch (error) {
+            console.error('[Cron] ❌ Lighter tracker check failed:', error);
+          }
+        })(),
+
+        // Paradex
+        (async () => {
+          try {
+            const id = env.PARADEX_TRACKER.idFromName('paradex-tracker');
+            const tracker = env.PARADEX_TRACKER.get(id);
+            const response = await tracker.fetch(new Request('http://internal/ensure-running'));
+            console.log('[Cron] ✅ Paradex tracker checked');
+          } catch (error) {
+            console.error('[Cron] ❌ Paradex tracker check failed:', error);
+          }
+        })(),
+
+        // Hyperliquid
+        (async () => {
+          try {
+            const id = env.HYPERLIQUID_TRACKER.idFromName('hyperliquid-tracker');
+            const tracker = env.HYPERLIQUID_TRACKER.get(id);
+            const response = await tracker.fetch(new Request('http://internal/ensure-running'));
+            console.log('[Cron] ✅ Hyperliquid tracker checked');
+          } catch (error) {
+            console.error('[Cron] ❌ Hyperliquid tracker check failed:', error);
+          }
+        })()
+      ];
+
+      await Promise.all(trackerChecks);
+
       // Initialize and check alerts via AlertManager
       const id = env.ALERT_MANAGER.idFromName('alert-manager');
       const manager = env.ALERT_MANAGER.get(id);
@@ -746,7 +789,7 @@ export default {
       console.log('[Cron] ✅ Alert check completed:', result);
 
     } catch (error) {
-      console.error('[Cron] ❌ Alert check failed:', error);
+      console.error('[Cron] ❌ Scheduled task failed:', error);
     }
   }
 };
