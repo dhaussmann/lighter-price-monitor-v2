@@ -298,28 +298,24 @@ export class EdgeXTracker extends DurableObject<Env> {
    * Process orderbook and send to aggregator
    */
   processOrderbook(contractId: string, contractName: string, orderbook: LocalOrderbook): void {
-    // Sort and get top 5 levels
+    // Sort and get best bid and ask
     const sortedBids = Array.from(orderbook.bids.entries())
-      .sort((a, b) => b[0] - a[0]) // Descending
-      .slice(0, 5);
+      .sort((a, b) => b[0] - a[0]); // Descending
 
     const sortedAsks = Array.from(orderbook.asks.entries())
-      .sort((a, b) => a[0] - b[0]) // Ascending
-      .slice(0, 5);
+      .sort((a, b) => a[0] - b[0]); // Ascending
 
-    if (sortedBids.length === 0 || sortedAsks.length === 0) {
-      return; // Skip if no bids or asks
+    if (sortedBids.length === 0 && sortedAsks.length === 0) {
+      return; // Skip if no data
     }
 
-    // Send to aggregator
+    // Get best bid and ask prices
+    const bestBid = sortedBids.length > 0 ? sortedBids[0][0] : null;
+    const bestAsk = sortedAsks.length > 0 ? sortedAsks[0][0] : null;
+
+    // Send to aggregator (uses contractName as symbol)
     if (this.aggregator) {
-      this.aggregator.processOrderbookUpdate({
-        contractId,
-        symbol: contractName,
-        bids: sortedBids,
-        asks: sortedAsks,
-        timestamp: Date.now()
-      });
+      this.aggregator.processUpdate(contractName, bestBid, bestAsk);
     }
   }
 
