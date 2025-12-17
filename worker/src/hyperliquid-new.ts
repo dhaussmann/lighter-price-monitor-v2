@@ -40,12 +40,13 @@ export class HyperliquidTracker extends DurableObject<Env> {
       if (storedState === undefined) {
         await this.ctx.storage.put('isTracking', true);
       }
-    });
 
-    if (this.isTracking) {
-      console.log(`[Hyperliquid] ▶️ Auto-starting tracking...`);
-      setTimeout(() => this.startTracking(), 1000);
-    }
+      // Auto-start tracking if enabled (MUST be inside blockConcurrencyWhile!)
+      if (this.isTracking) {
+        console.log(`[Hyperliquid] ▶️ Auto-starting tracking...`);
+        setTimeout(() => this.startTracking(), 1000);
+      }
+    });
   }
 
   /**
