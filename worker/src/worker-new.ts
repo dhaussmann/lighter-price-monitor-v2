@@ -1797,15 +1797,15 @@ const HYPERLIQUID_DASHBOARD = `<!DOCTYPE html>
         statusEl.className = 'status running';
         startBtn.disabled = true;
         stopBtn.disabled = false;
-      } else if (hyperliquidConnected) {
-        statusEl.textContent = '🟡 CONNECTED (Not Tracking)';
-        statusEl.className = 'status stopped';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
       } else {
-        statusEl.textContent = '🔴 DISCONNECTED';
+        if (hyperliquidConnected) {
+          statusEl.textContent = '🟢 READY';
+        } else {
+          statusEl.textContent = dashboardConnected ? '🔴 STOPPED' : '⚠️ DISCONNECTED';
+        }
         statusEl.className = 'status stopped';
-        startBtn.disabled = true;
+        // Button ist enabled wenn Dashboard verbunden ist (nicht Hyperliquid!)
+        startBtn.disabled = !dashboardConnected;
         stopBtn.disabled = true;
       }
     }
