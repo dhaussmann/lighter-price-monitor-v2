@@ -602,11 +602,11 @@ export default {
         const limit = parseInt(url.searchParams.get('limit') || '100');
         const offset = parseInt(url.searchParams.get('offset') || '0');
 
-        let query = 'SELECT * FROM edgex_orderbook_snapshots';
-        const params: any[] = [];
+        let query = 'SELECT * FROM orderbook_snapshots WHERE source = ?';
+        const params: any[] = ['edgex'];
 
         if (contract) {
-          query += ' WHERE contract_name = ?';
+          query += ' AND symbol = ?';
           params.push(contract);
         }
 
@@ -639,12 +639,13 @@ export default {
         const from = url.searchParams.get('from');
         const to = url.searchParams.get('to');
 
-        let query = 'SELECT * FROM edgex_orderbook_minutes';
+        let query = 'SELECT * FROM orderbook_minutes';
         const params: any[] = [];
-        const conditions: string[] = [];
+        const conditions: string[] = ['source = ?'];
+        params.push('edgex');
 
         if (contract) {
-          conditions.push('contract_name = ?');
+          conditions.push('symbol = ?');
           params.push(contract);
         }
 
@@ -658,10 +659,7 @@ export default {
           params.push(parseInt(to));
         }
 
-        if (conditions.length > 0) {
-          query += ' WHERE ' + conditions.join(' AND ');
-        }
-
+        query += ' WHERE ' + conditions.join(' AND ');
         query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
         params.push(limit, offset);
 
@@ -686,16 +684,17 @@ export default {
     if (url.pathname === '/api/edgex/overview') {
       try {
         const contractStats = await env.DB.prepare(`
-          SELECT contract_name,
+          SELECT symbol as contract_name,
                  COUNT(*) as total_minutes,
                  MIN(timestamp) as first_minute,
                  MAX(timestamp) as last_minute,
-                 AVG(avg_bid_price) as overall_avg_bid,
-                 AVG(avg_ask_price) as overall_avg_ask,
-                 SUM(snapshot_count) as total_snapshots
-          FROM edgex_orderbook_minutes
-          GROUP BY contract_name
-          ORDER BY contract_name
+                 AVG(avg_bid) as overall_avg_bid,
+                 AVG(avg_ask) as overall_avg_ask,
+                 SUM(tick_count) as total_snapshots
+          FROM orderbook_minutes
+          WHERE source = 'edgex'
+          GROUP BY symbol
+          ORDER BY symbol
         `).all();
 
         return new Response(JSON.stringify({
