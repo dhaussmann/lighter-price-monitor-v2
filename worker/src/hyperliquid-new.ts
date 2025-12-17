@@ -411,7 +411,11 @@ export class HyperliquidTracker extends DurableObject<Env> {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
+      // MUST call accept() BEFORE sending any messages
+      server.accept();
       this.sessions.add(server);
+
+      console.log(`[Hyperliquid] 👤 Client connected (${this.sessions.size} total)`);
 
       // Send initial stats
       const stats = await this.getStats();
@@ -446,8 +450,6 @@ export class HyperliquidTracker extends DurableObject<Env> {
         this.sessions.delete(server);
         console.log(`[Hyperliquid] 👋 Client disconnected (${this.sessions.size} remaining)`);
       });
-
-      server.accept();
 
       return new Response(null, {
         status: 101,
