@@ -12,6 +12,10 @@ name = "PARADEX_TRACKER"
 class_name = "ParadexTracker"
 
 [[durable_objects.bindings]]
+name = "HYPERLIQUID_TRACKER"
+class_name = "HyperliquidTracker"
+
+[[durable_objects.bindings]]
 name = "ALERT_MANAGER"
 class_name = "AlertManager"
 
@@ -23,8 +27,8 @@ database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
 
 # Migration
 [[migrations]]
-tag = "v6-alerts"
-new_classes = ["AlertManager"]
+tag = "v7-hyperliquid"
+new_classes = ["HyperliquidTracker", "AlertManager"]
 
 # Cron Trigger - Check alerts every minute
 [triggers]
