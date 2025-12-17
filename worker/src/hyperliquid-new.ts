@@ -22,6 +22,7 @@ export class HyperliquidTracker extends DurableObject<Env> {
   private sessions: Set<WebSocket> = new Set();
   private isTracking: boolean = false;
   private messagesReceived: number = 0;
+  private lastMessageAt: number = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -194,6 +195,7 @@ export class HyperliquidTracker extends DurableObject<Env> {
     try {
       const message = JSON.parse(data);
       this.messagesReceived++;
+      this.lastMessageAt = Date.now();
 
       // Handle l2Book updates
       if (message.channel === 'l2Book' && message.data) {
@@ -366,11 +368,14 @@ export class HyperliquidTracker extends DurableObject<Env> {
     return {
       isTracking: this.isTracking,
       markets: this.markets.size,
+      connected: this.ws?.readyState === WebSocket.OPEN,
       messagesReceived: this.messagesReceived,
+      lastMessageAt: this.lastMessageAt,
       database: {
         snapshots: snapshotCount?.count || 0,
         minutes: minuteCount?.count || 0
-      }
+      },
+      aggregator: this.aggregator?.getStats() || null
     };
   }
 
