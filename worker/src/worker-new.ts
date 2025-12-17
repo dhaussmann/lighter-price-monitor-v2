@@ -6,15 +6,17 @@
 import { LighterTracker } from './lighter-new';
 import { ParadexTracker } from './paradex-new';
 import { HyperliquidTracker } from './hyperliquid-new';
+import { EdgeXTracker } from './edgex-new';
 import { ArbitrageCalculator } from './arbitrage';
 import { AlertManager } from './alert-manager';
 
-export { LighterTracker, ParadexTracker, HyperliquidTracker, AlertManager };
+export { LighterTracker, ParadexTracker, HyperliquidTracker, EdgeXTracker, AlertManager };
 
 export interface Env {
   LIGHTER_TRACKER: DurableObjectNamespace;
   PARADEX_TRACKER: DurableObjectNamespace;
   HYPERLIQUID_TRACKER: DurableObjectNamespace;
+  EDGEX_TRACKER: DurableObjectNamespace;
   ALERT_MANAGER: DurableObjectNamespace;
   DB: D1Database;
 }
@@ -55,6 +57,13 @@ export default {
     if (url.pathname === '/ws/hyperliquid') {
       const id = env.HYPERLIQUID_TRACKER.idFromName('hyperliquid-tracker');
       const tracker = env.HYPERLIQUID_TRACKER.get(id);
+      return tracker.fetch(request);
+    }
+
+    // EdgeX WebSocket
+    if (url.pathname === '/ws/edgex') {
+      const id = env.EDGEX_TRACKER.idFromName('edgex-tracker');
+      const tracker = env.EDGEX_TRACKER.get(id);
       return tracker.fetch(request);
     }
 
@@ -542,6 +551,208 @@ export default {
     }
 
     //=====================================
+    // EdgeX API Endpoints
+    //=====================================
+
+    // GET /api/edgex/stats - EdgeX Statistics
+    if (url.pathname === '/api/edgex/stats') {
+      try {
+        const id = env.EDGEX_TRACKER.idFromName('edgex-tracker');
+        const tracker = env.EDGEX_TRACKER.get(id);
+
+        const statsResponse = await tracker.fetch(new Request('http://internal/stats'));
+        const stats = await statsResponse.json();
+
+        return new Response(JSON.stringify(stats), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Failed to fetch stats' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/edgex/markets - All EdgeX Markets
+    if (url.pathname === '/api/edgex/markets') {
+      try {
+        const result = await env.DB.prepare(
+          `SELECT * FROM edgex_markets ORDER BY contract_name`
+        ).all();
+
+        return new Response(JSON.stringify({
+          markets: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/edgex/snapshots?contract=BTCUSD&limit=100
+    if (url.pathname === '/api/edgex/snapshots') {
+      try {
+        const contract = url.searchParams.get('contract');
+        const limit = parseInt(url.searchParams.get('limit') || '100');
+        const offset = parseInt(url.searchParams.get('offset') || '0');
+
+        let query = 'SELECT * FROM edgex_orderbook_snapshots';
+        const params: any[] = [];
+
+        if (contract) {
+          query += ' WHERE contract_name = ?';
+          params.push(contract);
+        }
+
+        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const result = await env.DB.prepare(query).bind(...params).all();
+
+        return new Response(JSON.stringify({
+          contract: contract || 'all',
+          data: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/edgex/minutes?contract=BTCUSD&limit=60
+    if (url.pathname === '/api/edgex/minutes') {
+      try {
+        const contract = url.searchParams.get('contract');
+        const limit = parseInt(url.searchParams.get('limit') || '60');
+        const offset = parseInt(url.searchParams.get('offset') || '0');
+        const from = url.searchParams.get('from');
+        const to = url.searchParams.get('to');
+
+        let query = 'SELECT * FROM edgex_orderbook_minutes';
+        const params: any[] = [];
+        const conditions: string[] = [];
+
+        if (contract) {
+          conditions.push('contract_name = ?');
+          params.push(contract);
+        }
+
+        if (from) {
+          conditions.push('timestamp >= ?');
+          params.push(parseInt(from));
+        }
+
+        if (to) {
+          conditions.push('timestamp <= ?');
+          params.push(parseInt(to));
+        }
+
+        if (conditions.length > 0) {
+          query += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const result = await env.DB.prepare(query).bind(...params).all();
+
+        return new Response(JSON.stringify({
+          contract: contract || 'all',
+          data: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/edgex/overview - EdgeX Data Overview
+    if (url.pathname === '/api/edgex/overview') {
+      try {
+        const contractStats = await env.DB.prepare(`
+          SELECT contract_name,
+                 COUNT(*) as total_minutes,
+                 MIN(timestamp) as first_minute,
+                 MAX(timestamp) as last_minute,
+                 AVG(avg_bid_price) as overall_avg_bid,
+                 AVG(avg_ask_price) as overall_avg_ask,
+                 SUM(snapshot_count) as total_snapshots
+          FROM edgex_orderbook_minutes
+          GROUP BY contract_name
+          ORDER BY contract_name
+        `).all();
+
+        return new Response(JSON.stringify({
+          contracts: contractStats.results || [],
+          count: contractStats.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // POST /api/edgex/start - Start EdgeX Tracker
+    if (url.pathname === '/api/edgex/start' && request.method === 'POST') {
+      try {
+        const id = env.EDGEX_TRACKER.idFromName('edgex-tracker');
+        const tracker = env.EDGEX_TRACKER.get(id);
+
+        const result = await tracker.fetch(new Request('http://internal/start'));
+        const data = await result.json();
+
+        return new Response(JSON.stringify(data), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Failed to start tracker' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // POST /api/edgex/stop - Stop EdgeX Tracker
+    if (url.pathname === '/api/edgex/stop' && request.method === 'POST') {
+      try {
+        const id = env.EDGEX_TRACKER.idFromName('edgex-tracker');
+        const tracker = env.EDGEX_TRACKER.get(id);
+
+        const result = await tracker.fetch(new Request('http://internal/stop'));
+        const data = await result.json();
+
+        return new Response(JSON.stringify(data), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Failed to stop tracker' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    //=====================================
     // Arbitrage API Endpoints
     //=====================================
 
@@ -722,6 +933,13 @@ export default {
       });
     }
 
+    // EdgeX Dashboard
+    if (url.pathname === '/edgex' || url.pathname === '/edgex.html') {
+      return new Response(EDGEX_DASHBOARD, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' }
+      });
+    }
+
     return new Response('Not Found', { status: 404, headers: corsHeaders });
   },
 
@@ -770,6 +988,18 @@ export default {
             console.log('[Cron] ✅ Hyperliquid tracker checked');
           } catch (error) {
             console.error('[Cron] ❌ Hyperliquid tracker check failed:', error);
+          }
+        })(),
+
+        // EdgeX
+        (async () => {
+          try {
+            const id = env.EDGEX_TRACKER.idFromName('edgex-tracker');
+            const tracker = env.EDGEX_TRACKER.get(id);
+            const response = await tracker.fetch(new Request('http://internal/ensure-running'));
+            console.log('[Cron] ✅ EdgeX tracker checked');
+          } catch (error) {
+            console.error('[Cron] ❌ EdgeX tracker check failed:', error);
           }
         })()
       ];
@@ -931,6 +1161,7 @@ const LIGHTER_DASHBOARD = `<!DOCTYPE html>
       <a href="/lighter" class="active">Lighter</a>
       <a href="/paradex">Paradex</a>
       <a href="/hyperliquid">Hyperliquid</a>
+      <a href="/edgex">EdgeX</a>
     </div>
     <h1>⚡ LIGHTER ORDERBOOK TRACKER</h1>
     <p class="subtitle">Streaming Aggregation • 15s Windows • Memory Efficient</p>
@@ -1240,6 +1471,7 @@ const PARADEX_DASHBOARD = `<!DOCTYPE html>
       <a href="/lighter">Lighter</a>
       <a href="/paradex" class="active">Paradex</a>
       <a href="/hyperliquid">Hyperliquid</a>
+      <a href="/edgex">EdgeX</a>
     </div>
 
     <h1>🔷 PARADEX ORDERBOOK TRACKER</h1>
@@ -1433,6 +1665,7 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
     .exchange-card.lighter { border-left: 4px solid #00ff88; }
     .exchange-card.paradex { border-left: 4px solid #00d4ff; }
     .exchange-card.hyperliquid { border-left: 4px solid #ff9500; }
+    .exchange-card.edgex { border-left: 4px solid #2d7dd2; }
     .exchange-card h2 {
       font-size: 24px;
       margin-bottom: 20px;
@@ -1440,6 +1673,7 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
     .exchange-card.lighter h2 { color: #00ff88; }
     .exchange-card.paradex h2 { color: #00d4ff; }
     .exchange-card.hyperliquid h2 { color: #ff9500; }
+    .exchange-card.edgex h2 { color: #2d7dd2; }
     .stat-row {
       display: flex;
       justify-content: space-between;
@@ -1475,6 +1709,10 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
       background: #ff9500;
       color: #0a0b0d;
     }
+    .btn-edgex {
+      background: #2d7dd2;
+      color: white;
+    }
     .btn:hover {
       transform: translateY(-2px);
       filter: brightness(1.1);
@@ -1488,6 +1726,7 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
       <a href="/lighter">Lighter</a>
       <a href="/paradex">Paradex</a>
       <a href="/hyperliquid">Hyperliquid</a>
+      <a href="/edgex">EdgeX</a>
     </div>
 
     <h1>📊 EXCHANGE OVERVIEW</h1>
@@ -1570,6 +1809,32 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
         </div>
         <a href="/hyperliquid" class="btn btn-hyperliquid">Open Dashboard →</a>
       </div>
+
+      <!-- EdgeX Card -->
+      <div class="exchange-card edgex">
+        <h2>⚡ EdgeX</h2>
+        <div class="stat-row">
+          <span class="stat-label">Status</span>
+          <span class="stat-value" id="edgexStatus">Loading...</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Markets</span>
+          <span class="stat-value" id="edgexMarkets">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Messages</span>
+          <span class="stat-value" id="edgexMessages">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Snapshots</span>
+          <span class="stat-value" id="edgexSnapshots">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Minutes</span>
+          <span class="stat-value" id="edgexMinutes">-</span>
+        </div>
+        <a href="/edgex" class="btn btn-edgex">Open Dashboard →</a>
+      </div>
     </div>
   </div>
 
@@ -1607,6 +1872,17 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
           hyperliquidWs.close();
         }
       };
+
+      // EdgeX stats via WebSocket
+      const edgexWs = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/edgex');
+      edgexWs.onopen = () => edgexWs.send(JSON.stringify({ type: 'get_stats' }));
+      edgexWs.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'stats') {
+          updateEdgeXStats(msg.data);
+          edgexWs.close();
+        }
+      };
     }
 
     function updateLighterStats(data) {
@@ -1631,6 +1907,14 @@ const OVERVIEW_HTML = `<!DOCTYPE html>
       document.getElementById('hyperliquidMessages').textContent = (data.messagesReceived || 0).toLocaleString();
       document.getElementById('hyperliquidSnapshots').textContent = data.database?.snapshots || 0;
       document.getElementById('hyperliquidMinutes').textContent = data.database?.minutes || 0;
+    }
+
+    function updateEdgeXStats(data) {
+      document.getElementById('edgexStatus').textContent = data.isTracking ? '🟢 Tracking' : '🔴 Stopped';
+      document.getElementById('edgexMarkets').textContent = data.markets || 0;
+      document.getElementById('edgexMessages').textContent = (data.messagesReceived || 0).toLocaleString();
+      document.getElementById('edgexSnapshots').textContent = data.database?.snapshots || 0;
+      document.getElementById('edgexMinutes').textContent = data.database?.minutes || 0;
     }
 
     loadStats();
@@ -1773,6 +2057,7 @@ const HYPERLIQUID_DASHBOARD = `<!DOCTYPE html>
       <a href="/lighter">Lighter</a>
       <a href="/paradex">Paradex</a>
       <a href="/hyperliquid" class="active">Hyperliquid</a>
+      <a href="/edgex">EdgeX</a>
     </div>
     <h1>🟠 HYPERLIQUID ORDERBOOK TRACKER</h1>
     <p class="subtitle">Streaming Aggregation • 15s Windows • Memory Efficient</p>
@@ -1932,6 +2217,361 @@ const HYPERLIQUID_DASHBOARD = `<!DOCTYPE html>
         panel.removeChild(panel.lastChild);
       }
     }
+
+    // Stats refresh interval
+    let statsInterval = null;
+
+    function startStatsInterval() {
+      if (statsInterval) clearInterval(statsInterval);
+      statsInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'get_stats' }));
+        }
+      }, 5000); // Every 5 seconds
+    }
+
+    // Connect on load
+    connect();
+  </script>
+</body>
+</html>`;
+
+const EDGEX_DASHBOARD = `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EdgeX Orderbook Tracker</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: #0a0b0d;
+      color: #2d7dd2;
+      padding: 20px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .nav { margin-bottom: 20px; }
+    .nav a { color: #8b92a8; margin-right: 20px; text-decoration: none; }
+    .nav a:hover { color: #2d7dd2; }
+    .nav a.active { color: #2d7dd2; font-weight: bold; }
+    h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+      text-shadow: 0 0 10px #2d7dd2;
+    }
+    .subtitle {
+      color: #8b92a8;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .control-panel {
+      background: #1a1c26;
+      border: 1px solid #2d7dd2;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .status {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 20px;
+      margin-bottom: 15px;
+      font-weight: bold;
+    }
+    .status.running { background: rgba(45, 125, 210, 0.2); color: #2d7dd2; }
+    .status.stopped { background: rgba(255, 51, 102, 0.2); color: #ff3366; }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn-start {
+      background: #2d7dd2;
+      color: white;
+    }
+    .btn-start:hover:not(:disabled) {
+      background: #2569b8;
+      transform: translateY(-1px);
+    }
+    .btn-stop {
+      background: #ff3366;
+      color: white;
+    }
+    .btn-stop:hover:not(:disabled) {
+      background: #cc2952;
+      transform: translateY(-1px);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .stat-item {
+      background: #13141a;
+      padding: 15px;
+      border-radius: 6px;
+      border-left: 3px solid #2d7dd2;
+    }
+    .stat-label {
+      color: #8b92a8;
+      font-size: 11px;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #2d7dd2;
+    }
+    .log-panel {
+      background: #13141a;
+      border: 1px solid #2d7dd2;
+      border-radius: 8px;
+      padding: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .log-panel h2 {
+      font-size: 16px;
+      margin-bottom: 15px;
+      color: #2d7dd2;
+    }
+    .log-entry {
+      padding: 8px 0;
+      border-bottom: 1px solid #1a1c26;
+      font-size: 12px;
+      color: #8b92a8;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .log-entry.error {
+      color: #ff3366;
+    }
+    .log-entry.success {
+      color: #00ff88;
+    }
+    .websocket-status {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    .websocket-status.connected {
+      background: #00ff88;
+      box-shadow: 0 0 8px #00ff88;
+    }
+    .websocket-status.disconnected {
+      background: #ff3366;
+      box-shadow: 0 0 8px #ff3366;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/overview">Overview</a>
+      <a href="/lighter">Lighter</a>
+      <a href="/paradex">Paradex</a>
+      <a href="/hyperliquid">Hyperliquid</a>
+      <a href="/edgex">EdgeX</a>
+      <a href="/edgex" class="active">EdgeX</a>
+    </div>
+
+    <h1>⚡ EdgeX Tracker</h1>
+    <p class="subtitle">Real-time orderbook monitoring and aggregation</p>
+
+    <div class="control-panel">
+      <div>
+        <span class="websocket-status disconnected" id="wsStatus"></span>
+        <span class="status stopped" id="status">● STOPPED</span>
+      </div>
+
+      <div class="buttons">
+        <button class="btn-start" id="startBtn" disabled>START TRACKING</button>
+        <button class="btn-stop" id="stopBtn" disabled>STOP TRACKING</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">Markets</div>
+          <div class="stat-value" id="markets">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Connected</div>
+          <div class="stat-value" id="connected">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Messages</div>
+          <div class="stat-value" id="messages">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Last Update</div>
+          <div class="stat-value" id="lastUpdate">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">DB Snapshots</div>
+          <div class="stat-value" id="dbSnapshots">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">DB Minutes</div>
+          <div class="stat-value" id="dbMinutes">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="log-panel">
+      <h2>📊 Activity Log</h2>
+      <div id="logContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let dashboardConnected = false;
+    let edgexConnected = false;
+    let isTracking = false;
+
+    function addLog(message, type = 'info') {
+      const container = document.getElementById('logContainer');
+      const entry = document.createElement('div');
+      entry.className = \`log-entry \${type}\`;
+      const timestamp = new Date().toLocaleTimeString('de-DE');
+      entry.textContent = \`[\${timestamp}] \${message}\`;
+      container.insertBefore(entry, container.firstChild);
+
+      // Keep only last 50 entries
+      while (container.children.length > 50) {
+        container.removeChild(container.lastChild);
+      }
+    }
+
+    function updateUI(stats) {
+      isTracking = stats.isTracking;
+      edgexConnected = stats.connected;
+
+      document.getElementById('status').textContent = isTracking ? '● RUNNING' : '● STOPPED';
+      document.getElementById('status').className = \`status \${isTracking ? 'running' : 'stopped'}\`;
+
+      document.getElementById('markets').textContent = stats.markets || 0;
+      document.getElementById('connected').textContent = stats.connected ? 'YES' : 'NO';
+      document.getElementById('messages').textContent = (stats.messagesReceived || 0).toLocaleString();
+      
+      if (stats.lastMessageAt && stats.lastMessageAt > 0) {
+        const seconds = Math.floor((Date.now() - stats.lastMessageAt) / 1000);
+        document.getElementById('lastUpdate').textContent = \`\${seconds}s ago\`;
+      } else {
+        document.getElementById('lastUpdate').textContent = '-';
+      }
+
+      document.getElementById('dbSnapshots').textContent = (stats.database?.snapshots || 0).toLocaleString();
+      document.getElementById('dbMinutes').textContent = (stats.database?.minutes || 0).toLocaleString();
+
+      // Button states
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+
+      if (isTracking) {
+        startBtn.disabled = true;
+        stopBtn.disabled = !dashboardConnected;
+      } else {
+        startBtn.disabled = !dashboardConnected;
+        stopBtn.disabled = true;
+      }
+    }
+
+    function connect() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = \`\${protocol}//\${window.location.host}/ws/edgex\`;
+      
+      addLog('Connecting to EdgeX tracker...', 'info');
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        dashboardConnected = true;
+        document.getElementById('wsStatus').className = 'websocket-status connected';
+        addLog('Dashboard connected', 'success');
+        startStatsInterval();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'stats') {
+            updateUI(data.data);
+          } else if (data.type === 'status') {
+            addLog(\`Status: \${JSON.stringify(data.data)}\`, 'info');
+          } else if (data.type === 'message') {
+            // Log incoming messages (optional, can be noisy)
+          }
+        } catch (error) {
+          addLog(\`Parse error: \${error.message}\`, 'error');
+        }
+      };
+
+      ws.onerror = (error) => {
+        addLog('WebSocket error', 'error');
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onclose = () => {
+        dashboardConnected = false;
+        document.getElementById('wsStatus').className = 'websocket-status disconnected';
+        addLog('Dashboard disconnected', 'error');
+        if (statsInterval) clearInterval(statsInterval);
+        
+        // Reconnect after 3 seconds
+        setTimeout(connect, 3000);
+      };
+    }
+
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      addLog('Starting tracker...', 'info');
+      try {
+        const response = await fetch('/api/edgex/start', { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+          addLog('Tracker started successfully', 'success');
+        } else {
+          addLog(\`Failed to start: \${result.message}\`, 'error');
+        }
+      } catch (error) {
+        addLog(\`Start error: \${error.message}\`, 'error');
+      }
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', async () => {
+      addLog('Stopping tracker...', 'info');
+      try {
+        const response = await fetch('/api/edgex/stop', { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+          addLog('Tracker stopped successfully', 'success');
+        } else {
+          addLog(\`Failed to stop: \${result.message}\`, 'error');
+        }
+      } catch (error) {
+        addLog(\`Stop error: \${error.message}\`, 'error');
+      }
+    });
 
     // Stats refresh interval
     let statsInterval = null;

@@ -16,6 +16,10 @@ name = "HYPERLIQUID_TRACKER"
 class_name = "HyperliquidTracker"
 
 [[durable_objects.bindings]]
+name = "EDGEX_TRACKER"
+class_name = "EdgeXTracker"
+
+[[durable_objects.bindings]]
 name = "ALERT_MANAGER"
 class_name = "AlertManager"
 
@@ -29,6 +33,10 @@ database_id = "9bc40b46-ad84-4722-a63c-a4de36edc246"
 [[migrations]]
 tag = "v7-hyperliquid"
 new_classes = ["HyperliquidTracker"]
+
+[[migrations]]
+tag = "v8-edgex"
+new_classes = ["EdgeXTracker"]
 
 # Cron Trigger - Check alerts every minute
 [triggers]
