@@ -44,7 +44,7 @@ export class HyperliquidTracker extends DurableObject<Env> {
       // Auto-start tracking if enabled (MUST be inside blockConcurrencyWhile!)
       if (this.isTracking) {
         console.log(`[Hyperliquid] ▶️ Auto-starting tracking...`);
-        setTimeout(() => this.startTracking(), 1000);
+        this.startTracking();  // Direct call, no setTimeout
       }
     });
   }
