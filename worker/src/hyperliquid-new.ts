@@ -446,8 +446,23 @@ export class HyperliquidTracker extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Handle internal ensure-running ping (wakes up DO and triggers auto-start)
+    // Handle internal ensure-running ping (wakes up DO and ensures tracking is active)
     if (url.pathname === '/ensure-running') {
+      console.log(`[Hyperliquid] 🔍 Ensure-running check: isTracking=${this.isTracking}`);
+
+      // Auto-start if not already tracking
+      if (!this.isTracking) {
+        console.log(`[Hyperliquid] 🚀 Auto-starting from ensure-running...`);
+        try {
+          await this.initialize();
+          this.isTracking = true;
+          await this.ctx.storage.put('isTracking', true);
+          console.log(`[Hyperliquid] ✅ Auto-start successful`);
+        } catch (error) {
+          console.error(`[Hyperliquid] ❌ Auto-start failed:`, error);
+        }
+      }
+
       return new Response(JSON.stringify({
         ok: true,
         isTracking: this.isTracking,
