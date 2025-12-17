@@ -454,11 +454,11 @@ export class EdgeXTracker extends DurableObject<Env> {
    */
   async getStats(): Promise<any> {
     const snapshotCount = await this.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM edgex_orderbook_snapshots'
+      "SELECT COUNT(*) as count FROM orderbook_snapshots WHERE source = 'edgex'"
     ).first();
 
     const minuteCount = await this.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM edgex_orderbook_minutes'
+      "SELECT COUNT(*) as count FROM orderbook_minutes WHERE source = 'edgex'"
     ).first();
 
     return {
