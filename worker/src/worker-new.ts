@@ -5,14 +5,16 @@
 
 import { LighterTracker } from './lighter-new';
 import { ParadexTracker } from './paradex-new';
+import { HyperliquidTracker } from './hyperliquid-new';
 import { ArbitrageCalculator } from './arbitrage';
 import { AlertManager } from './alert-manager';
 
-export { LighterTracker, ParadexTracker, AlertManager };
+export { LighterTracker, ParadexTracker, HyperliquidTracker, AlertManager };
 
 export interface Env {
   LIGHTER_TRACKER: DurableObjectNamespace;
   PARADEX_TRACKER: DurableObjectNamespace;
+  HYPERLIQUID_TRACKER: DurableObjectNamespace;
   ALERT_MANAGER: DurableObjectNamespace;
   DB: D1Database;
 }
@@ -46,6 +48,13 @@ export default {
     if (url.pathname === '/ws/paradex') {
       const id = env.PARADEX_TRACKER.idFromName('paradex-tracker');
       const tracker = env.PARADEX_TRACKER.get(id);
+      return tracker.fetch(request);
+    }
+
+    // Hyperliquid WebSocket
+    if (url.pathname === '/ws/hyperliquid') {
+      const id = env.HYPERLIQUID_TRACKER.idFromName('hyperliquid-tracker');
+      const tracker = env.HYPERLIQUID_TRACKER.get(id);
       return tracker.fetch(request);
     }
 
@@ -370,13 +379,170 @@ export default {
     }
 
     //=====================================
+    // Hyperliquid API Endpoints
+    //=====================================
+
+    // GET /api/hyperliquid/stats - Hyperliquid Statistics
+    if (url.pathname === '/api/hyperliquid/stats') {
+      try {
+        const id = env.HYPERLIQUID_TRACKER.idFromName('hyperliquid-tracker');
+        const tracker = env.HYPERLIQUID_TRACKER.get(id);
+        const response = await tracker.fetch(request);
+        return response;
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Failed to fetch stats' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/hyperliquid/markets - All Hyperliquid Markets
+    if (url.pathname === '/api/hyperliquid/markets') {
+      try {
+        const result = await env.DB.prepare(
+          `SELECT * FROM hyperliquid_markets WHERE active = 1 ORDER BY symbol`
+        ).all();
+
+        return new Response(JSON.stringify({
+          markets: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/hyperliquid/snapshots?symbol=BTC&limit=100
+    if (url.pathname === '/api/hyperliquid/snapshots') {
+      try {
+        const symbol = url.searchParams.get('symbol');
+        const limit = parseInt(url.searchParams.get('limit') || '100');
+        const offset = parseInt(url.searchParams.get('offset') || '0');
+
+        let query = 'SELECT * FROM hyperliquid_snapshots';
+        const params: any[] = [];
+
+        if (symbol) {
+          query += ' WHERE symbol = ?';
+          params.push(symbol);
+        }
+
+        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const result = await env.DB.prepare(query).bind(...params).all();
+
+        return new Response(JSON.stringify({
+          symbol: symbol || 'all',
+          data: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/hyperliquid/minutes?symbol=BTC&limit=60
+    if (url.pathname === '/api/hyperliquid/minutes') {
+      try {
+        const symbol = url.searchParams.get('symbol');
+        const limit = parseInt(url.searchParams.get('limit') || '60');
+        const offset = parseInt(url.searchParams.get('offset') || '0');
+        const from = url.searchParams.get('from'); // timestamp
+        const to = url.searchParams.get('to');
+
+        let query = 'SELECT * FROM hyperliquid_minutes';
+        const params: any[] = [];
+        const conditions: string[] = [];
+
+        if (symbol) {
+          conditions.push('symbol = ?');
+          params.push(symbol);
+        }
+
+        if (from) {
+          conditions.push('timestamp >= ?');
+          params.push(parseInt(from));
+        }
+
+        if (to) {
+          conditions.push('timestamp <= ?');
+          params.push(parseInt(to));
+        }
+
+        if (conditions.length > 0) {
+          query += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const result = await env.DB.prepare(query).bind(...params).all();
+
+        return new Response(JSON.stringify({
+          symbol: symbol || 'all',
+          data: result.results || [],
+          count: result.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // GET /api/hyperliquid/overview - Hyperliquid Data Overview
+    if (url.pathname === '/api/hyperliquid/overview') {
+      try {
+        const symbolStats = await env.DB.prepare(`
+          SELECT symbol,
+                 COUNT(*) as total_minutes,
+                 MIN(timestamp) as first_minute,
+                 MAX(timestamp) as last_minute,
+                 AVG(avg_bid) as overall_avg_bid,
+                 AVG(avg_ask) as overall_avg_ask,
+                 SUM(tick_count) as total_ticks
+          FROM hyperliquid_minutes
+          GROUP BY symbol
+          ORDER BY symbol
+        `).all();
+
+        return new Response(JSON.stringify({
+          symbols: symbolStats.results || [],
+          count: symbolStats.results?.length || 0
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Database error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    //=====================================
     // Arbitrage API Endpoints
     //=====================================
 
     // GET /api/arbitrage - Calculate arbitrage opportunities
     // Query params:
     //   - symbol: Filter by symbol (e.g., 'BTC', 'ETH')
-    //   - exchanges: Comma-separated list (default: 'lighter,paradex')
+    //   - exchanges: Comma-separated list (default: 'lighter,paradex,hyperliquid')
     //   - minProfit: Minimum profit percentage (default: 0)
     //   - useMinutes: Use minute data instead of snapshots (default: false)
     if (url.pathname === '/api/arbitrage') {
@@ -384,7 +550,7 @@ export default {
         const calculator = new ArbitrageCalculator(env.DB);
 
         const symbol = url.searchParams.get('symbol') || undefined;
-        const exchangesParam = url.searchParams.get('exchanges') || 'lighter,paradex';
+        const exchangesParam = url.searchParams.get('exchanges') || 'lighter,paradex,hyperliquid';
         const exchanges = exchangesParam.split(',').map(e => e.trim());
         const minProfit = parseFloat(url.searchParams.get('minProfit') || '0');
         const useMinutes = url.searchParams.get('useMinutes') === 'true';
@@ -423,7 +589,7 @@ export default {
     // GET /api/arbitrage/history - Historical arbitrage opportunities
     // Query params:
     //   - symbol: Symbol to analyze (required)
-    //   - exchanges: Comma-separated list (default: 'lighter,paradex')
+    //   - exchanges: Comma-separated list (default: 'lighter,paradex,hyperliquid')
     //   - from: Start timestamp (required)
     //   - to: End timestamp (required)
     //   - interval: 'snapshots' or 'minutes' (default: 'minutes')
@@ -451,7 +617,7 @@ export default {
         }
 
         const calculator = new ArbitrageCalculator(env.DB);
-        const exchangesParam = url.searchParams.get('exchanges') || 'lighter,paradex';
+        const exchangesParam = url.searchParams.get('exchanges') || 'lighter,paradex,hyperliquid';
         const exchanges = exchangesParam.split(',').map(e => e.trim());
         const interval = (url.searchParams.get('interval') || 'minutes') as 'snapshots' | 'minutes';
 
