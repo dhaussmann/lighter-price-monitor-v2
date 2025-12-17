@@ -79,7 +79,7 @@ export const DEFAULT_ALERT_CONFIGS: AlertConfig[] = [
     enabled: false, // User must enable manually
     minProfitPercent: 0.5,
     symbols: [], // All symbols
-    exchanges: ['lighter', 'paradex'],
+    exchanges: ['lighter', 'paradex', 'hyperliquid'],
     channels: [
       {
         type: 'console',
